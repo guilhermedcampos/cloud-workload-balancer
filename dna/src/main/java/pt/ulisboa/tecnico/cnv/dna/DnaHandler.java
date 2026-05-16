@@ -1,5 +1,7 @@
 package pt.ulisboa.tecnico.cnv.dna;
 
+import pt.ulisboa.tecnico.cnv.javassist.tools.Metrics;
+import pt.ulisboa.tecnico.cnv.javassist.tools.ICount;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.URI;
@@ -58,13 +60,35 @@ public class DnaHandler implements HttpHandler, RequestHandler<Map<String, Strin
         try {
             String seq1Param = URLDecoder.decode(parameters.getOrDefault("seq1", "seq1:ATGC"), StandardCharsets.UTF_8);
             String seq2Param = URLDecoder.decode(parameters.getOrDefault("seq2", "seq2:ATGC"), StandardCharsets.UTF_8);
+            int minLength = Integer.parseInt(parameters.getOrDefault("minLength", "1"));
+            boolean stopOnFirst = Boolean.parseBoolean(parameters.getOrDefault("stopOnFirst", "false"));
 
-            String minLengthParam = parameters.getOrDefault("minLength", "1");
-            String stopOnFirstParam = parameters.getOrDefault("stopOnFirst", "false");
-            int minLength = Integer.parseInt(minLengthParam);
-            boolean stopOnFirst = Boolean.parseBoolean(stopOnFirstParam);
+            // Reset the counter
+            ICount.reset();
 
+            // Execute the workload
             String response = handleWorkload(seq1Param, seq2Param, minLength, stopOnFirst);
+
+            // Retrieve metrics
+            long cost = ICount.getCounter();
+            long threadId = Thread.currentThread().getId();
+            String timestamp = java.time.LocalDateTime.now().toString();
+
+            // Log metrics
+            String logLine = String.format(
+                    "%s,dna,minLength=%d;stopOnFirst=%b;seq1Length=%d;seq2Length=%d,%d,%d",
+                    timestamp,
+                    minLength,
+                    stopOnFirst,
+                    seq1Param.length(),
+                    seq2Param.length(),
+                    cost,
+                    threadId
+            );
+            Metrics.logMetric(logLine);
+
+            // Remove the counter
+            ICount.remove();
 
             he.sendResponseHeaders(200, response.getBytes().length);
             OutputStream os = he.getResponseBody();
@@ -73,7 +97,7 @@ public class DnaHandler implements HttpHandler, RequestHandler<Map<String, Strin
 
         } catch (NumberFormatException e) {
             e.printStackTrace();
-            String errorResponse = "{ \" error\":\" Invalid minLength parameter: " + e.getMessage() + "\"}";
+            String errorResponse = "{ \"error\":\"Invalid minLength parameter.\"}";
             he.sendResponseHeaders(400, errorResponse.getBytes().length);
             OutputStream os = he.getResponseBody();
             os.write(errorResponse.getBytes());

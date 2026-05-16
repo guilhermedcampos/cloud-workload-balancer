@@ -1,5 +1,7 @@
 package pt.ulisboa.tecnico.cnv.grayscott;
 
+import pt.ulisboa.tecnico.cnv.javassist.tools.Metrics;
+import pt.ulisboa.tecnico.cnv.javassist.tools.ICount;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.sun.net.httpserver.HttpExchange;
@@ -64,7 +66,35 @@ public class GrayScottHandler implements HttpHandler, RequestHandler<Map<String,
             boolean stopOnExtinction = Boolean.parseBoolean(parameters.getOrDefault("stopOnExtinction", "false"));
             String seedMode = parameters.getOrDefault("seedMode", "center");
 
+            // Reset instrumentation counter for this request
+            ICount.reset();
+            
             String response = handleWorkload(size, maxIterations, F, K, stopOnExtinction, seedMode);
+
+            // Retrieve metrics
+            long cost = ICount.getCounter();
+            long threadId = Thread.currentThread().getId();
+            String timestamp = java.time.LocalDateTime.now().toString();
+
+            // Build CSV log line
+            String logLine = String.format(
+                    "%s,grayscott,size=%d;maxIterations=%d;f=%f;k=%f;stopOnExtinction=%b;seedMode=%s,%d,%d",
+                    timestamp,
+                    size,
+                    maxIterations,
+                    F,
+                    K,
+                    stopOnExtinction,
+                    seedMode,
+                    cost,
+                    threadId
+            );
+
+            // Write to metrics.log
+            Metrics.logMetric(logLine);
+
+            // Clean ThreadLocal state
+            ICount.remove();
 
             he.sendResponseHeaders(200, response.length());
             OutputStream os = he.getResponseBody();

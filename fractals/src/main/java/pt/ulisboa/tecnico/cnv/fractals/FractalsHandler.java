@@ -1,5 +1,7 @@
 package pt.ulisboa.tecnico.cnv.fractals;
 
+import pt.ulisboa.tecnico.cnv.javassist.tools.Metrics;
+import pt.ulisboa.tecnico.cnv.javassist.tools.ICount;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.sun.net.httpserver.HttpExchange;
@@ -60,7 +62,33 @@ public class FractalsHandler implements HttpHandler, RequestHandler<Map<String, 
             int height = Integer.parseInt(parameters.getOrDefault("h", "600"));
             int iterations = Integer.parseInt(parameters.getOrDefault("iterations", "100"));
 
+            // Reset the counter
+            ICount.reset();
+
+            // Execute the workload
             String response = handleWorkload(width, height, iterations);
+
+            // Retrieve metrics
+            long cost = ICount.getCounter();
+            long threadId = Thread.currentThread().getId();
+            String timestamp = java.time.LocalDateTime.now().toString();
+
+            // Build CSV log line
+            String logLine = String.format(
+                    "%s,fractals,w=%d;h=%d;iterations=%d,%d,%d",
+                    timestamp,
+                    width,
+                    height,
+                    iterations,
+                    cost,
+                    threadId
+            );
+
+            // Write to metrics.log
+            Metrics.logMetric(logLine);
+
+            // Clean ThreadLocal state
+            ICount.remove();
 
             he.sendResponseHeaders(200, response.length());
             OutputStream os = he.getResponseBody();
