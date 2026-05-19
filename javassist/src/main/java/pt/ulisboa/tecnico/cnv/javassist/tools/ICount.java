@@ -8,47 +8,68 @@ import javassist.CtBehavior;
 public class ICount extends CodeDumper {
 
     /**
-     * Thread-local storage for instruction count.
+     * Thread-local storage for instruction count, basic block count, and method count.
      */
-    private static final ThreadLocal<Long> counter = ThreadLocal.withInitial(() -> 0L);
+    private static final ThreadLocal<Long> instructionCounter = ThreadLocal.withInitial(() -> 0L);
+    private static final ThreadLocal<Long> blockCounter = ThreadLocal.withInitial(() -> 0L);
+    private static final ThreadLocal<Long> methodCounter = ThreadLocal.withInitial(() -> 0L);
 
     public ICount(List<String> packageNameList, String writeDestination) {
         super(packageNameList, writeDestination);
     }
 
     /**
-     * Increment the basic block counter for the current thread.
+     * Increment the basic block counter and instruction counter for the current thread.
      */
     public static void incBasicBlock(int position, int length) {
-        counter.set(counter.get() + length);
+        blockCounter.set(blockCounter.get() + 1);
+        instructionCounter.set(instructionCounter.get() + length);
     }
 
     /**
      * Increment the method counter for the current thread.
      */
     public static void incBehavior(String name) {
-        // No changes needed here for now.
+        methodCounter.set(methodCounter.get() + 1);
     }
 
     /**
-     * Reset the counter for the current thread.
+     * Reset all counters for the current thread.
      */
     public static void reset() {
-        counter.set(0L);
+        instructionCounter.set(0L);
+        blockCounter.set(0L);
+        methodCounter.set(0L);
     }
 
     /**
-     * Get the counter value for the current thread.
+     * Get the instruction counter value for the current thread.
      */
-    public static long getCounter() {
-        return counter.get();
+    public static long getInstructionCounter() {
+        return instructionCounter.get();
     }
 
     /**
-     * Remove the counter for the current thread.
+     * Get the basic block counter value for the current thread.
+     */
+    public static long getBlockCounter() {
+        return blockCounter.get();
+    }
+
+    /**
+     * Get the method counter value for the current thread.
+     */
+    public static long getMethodCounter() {
+        return methodCounter.get();
+    }
+
+    /**
+     * Remove all counters for the current thread.
      */
     public static void remove() {
-        counter.remove();
+        instructionCounter.remove();
+        blockCounter.remove();
+        methodCounter.remove();
     }
 
     @Override
@@ -67,4 +88,11 @@ public class ICount extends CodeDumper {
         block.behavior.insertAt(block.line, String.format("%s.incBasicBlock(%s, %s);", ICount.class.getName(), block.getPosition(), block.getLength()));
     }
 
+    public static void printStatistics() {
+        System.out.println(String.format("[%s] Instructions: %d, Blocks: %d, Methods: %d",
+                ICount.class.getSimpleName(),
+                getInstructionCounter(),
+                getBlockCounter(),
+                getMethodCounter()));
+    }
 }

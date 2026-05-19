@@ -70,19 +70,23 @@ public class DnaHandler implements HttpHandler, RequestHandler<Map<String, Strin
             String response = handleWorkload(seq1Param, seq2Param, minLength, stopOnFirst);
 
             // Retrieve metrics
-            long cost = ICount.getCounter();
+            long instructions = ICount.getInstructionCounter();
+            long blocks = ICount.getBlockCounter();
+            long methods = ICount.getMethodCounter();
             long threadId = Thread.currentThread().getId();
             String timestamp = java.time.LocalDateTime.now().toString();
 
             // Log metrics
             String logLine = String.format(
-                    "%s,dna,minLength=%d;stopOnFirst=%b;seq1Length=%d;seq2Length=%d,%d,%d",
+                    "%s,dna,minLength=%d;stopOnFirst=%b;seq1Length=%d;seq2Length=%d,%d,%d,%d,%d",
                     timestamp,
                     minLength,
                     stopOnFirst,
                     seq1Param.length(),
                     seq2Param.length(),
-                    cost,
+                    instructions,
+                    blocks,
+                    methods,
                     threadId
             );
             Metrics.logMetric(logLine);

@@ -72,13 +72,15 @@ public class GrayScottHandler implements HttpHandler, RequestHandler<Map<String,
             String response = handleWorkload(size, maxIterations, F, K, stopOnExtinction, seedMode);
 
             // Retrieve metrics
-            long cost = ICount.getCounter();
+            long instructions = ICount.getInstructionCounter();
+            long blocks = ICount.getBlockCounter();
+            long methods = ICount.getMethodCounter();
             long threadId = Thread.currentThread().getId();
             String timestamp = java.time.LocalDateTime.now().toString();
 
-            // Build CSV log line
+            // Log metrics
             String logLine = String.format(
-                    "%s,grayscott,size=%d;maxIterations=%d;f=%f;k=%f;stopOnExtinction=%b;seedMode=%s,%d,%d",
+                    "%s,grayscott,size=%d;maxIterations=%d;f=%f;k=%f;stopOnExtinction=%b;seedMode=%s,%d,%d,%d,%d",
                     timestamp,
                     size,
                     maxIterations,
@@ -86,11 +88,11 @@ public class GrayScottHandler implements HttpHandler, RequestHandler<Map<String,
                     K,
                     stopOnExtinction,
                     seedMode,
-                    cost,
+                    instructions,
+                    blocks,
+                    methods,
                     threadId
             );
-
-            // Write to metrics.log
             Metrics.logMetric(logLine);
 
             // Clean ThreadLocal state

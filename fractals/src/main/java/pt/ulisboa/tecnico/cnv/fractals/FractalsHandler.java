@@ -69,22 +69,24 @@ public class FractalsHandler implements HttpHandler, RequestHandler<Map<String, 
             String response = handleWorkload(width, height, iterations);
 
             // Retrieve metrics
-            long cost = ICount.getCounter();
+            long instructions = ICount.getInstructionCounter();
+            long blocks = ICount.getBlockCounter();
+            long methods = ICount.getMethodCounter();
             long threadId = Thread.currentThread().getId();
             String timestamp = java.time.LocalDateTime.now().toString();
 
-            // Build CSV log line
+            // Log metrics
             String logLine = String.format(
-                    "%s,fractals,w=%d;h=%d;iterations=%d,%d,%d",
+                    "%s,fractals,w=%d;h=%d;iterations=%d,%d,%d,%d,%d",
                     timestamp,
                     width,
                     height,
                     iterations,
-                    cost,
+                    instructions,
+                    blocks,
+                    methods,
                     threadId
             );
-
-            // Write to metrics.log
             Metrics.logMetric(logLine);
 
             // Clean ThreadLocal state
