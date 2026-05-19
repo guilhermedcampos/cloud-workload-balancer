@@ -5,3 +5,4 @@ metrics.log
 output/
 labs/lab-aws/scripts/*.id
 labs/lab-aws/scripts/*.dns
+dump
