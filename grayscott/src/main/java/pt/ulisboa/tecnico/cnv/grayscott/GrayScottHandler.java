@@ -80,7 +80,7 @@ public class GrayScottHandler implements HttpHandler, RequestHandler<Map<String,
 
             // Log metrics
             String logLine = String.format(
-                    "%s,grayscott,size=%d;maxIterations=%d;f=%f;k=%f;stopOnExtinction=%b;seedMode=%s,%d,%d,%d,%d",
+                    "%s,grayscott,size=%d;maxIterations=%d;f=%f;k=%f;stopOnExtinction=%b;seedMode=%s,instructions=%d,blocks=%d,methods=%d,%d",
                     timestamp,
                     size,
                     maxIterations,

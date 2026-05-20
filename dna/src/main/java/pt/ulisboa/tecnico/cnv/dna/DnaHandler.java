@@ -78,7 +78,7 @@ public class DnaHandler implements HttpHandler, RequestHandler<Map<String, Strin
 
             // Log metrics
             String logLine = String.format(
-                    "%s,dna,minLength=%d;stopOnFirst=%b;seq1Length=%d;seq2Length=%d,%d,%d,%d,%d",
+                    "%s,dna,minLength=%d;stopOnFirst=%b;seq1Length=%d;seq2Length=%d,instructions=%d,blocks=%d,methods=%d,%d",
                     timestamp,
                     minLength,
                     stopOnFirst,

@@ -77,7 +77,7 @@ public class FractalsHandler implements HttpHandler, RequestHandler<Map<String, 
 
             // Log metrics
             String logLine = String.format(
-                    "%s,fractals,w=%d;h=%d;iterations=%d,%d,%d,%d,%d",
+                    "%s,fractals,w=%d;h=%d;iterations=%d,instructions=%d,blocks=%d,methods=%d,%d",
                     timestamp,
                     width,
                     height,
