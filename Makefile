@@ -7,10 +7,36 @@ DUMP_DIR := $(ROOT_DIR)/dump
 SERVER_MAIN := pt.ulisboa.tecnico.cnv.webserver.WebServer
 SERVER_AGENT := ICount:pt.ulisboa.tecnico.cnv.fractals,pt.ulisboa.tecnico.cnv.grayscott,pt.ulisboa.tecnico.cnv.dna:output
 
-# Default arguments for the handlers
-DNA_ARGS ?= human:$(ROOT_DIR)/dna/src/main/resources/human_HBB.fasta chimpanzee:$(ROOT_DIR)/dna/src/main/resources/chimpanzee_HBB.fasta 10 false
-FRACTALS_ARGS ?= 800 600 100 $(DUMP_DIR)/fractals/julia.png
-GRAYSCOTT_ARGS ?= 256 10000 0.030 0.062 false stripe $(DUMP_DIR)/grayscott/grayscott.png
+
+# DNA default arguments
+DNA_DIR := $(ROOT_DIR)/dna/src/main/resources/
+
+S1 ?= SEQ1
+S2 ?= SEQ2
+LENGTH ?= 10
+STOP ?= false
+
+DNA_OUT := $(DUMP_DIR)/dna/dna-match-result.html
+
+
+# Fractals default arguments
+W ?= 800
+H ?= 600
+I ?= 100
+
+FRACTALS_OUT := $(DUMP_DIR)/fractals/julia.png
+
+
+# Grayscott default arguments
+SIZE ?= 256
+MI ?= 10000
+F ?= 0.030
+K ?= 0.062
+STOP ?= false # true or false
+SEED ?= stripe # center / ring / stripe
+
+GRAYSCOTT_OUT := $(DUMP_DIR)/grayscott/grayscott.png
+
 
 .PHONY: all compile clean run-server server dna fractals grayscott
 
@@ -34,18 +60,18 @@ server: run-server
 
 dna:
 	mkdir -p $(DUMP_DIR)/dna
-	cd $(DUMP_DIR)/dna && java -cp $(ROOT_DIR)/dna/target/dna-1.0.0-SNAPSHOT-jar-with-dependencies.jar \
-		pt.ulisboa.tecnico.cnv.dna.DnaHandler $(DNA_ARGS)
+	curl "http://localhost:8000/dna?seq1=$(S1)&seq2=$(S2)&minLength=$(LENGTH)&stopOnFirst=$(STOP)" > $(DNA_OUT)
 
 fractals:
 	mkdir -p $(DUMP_DIR)/fractals
-	java -cp $(ROOT_DIR)/fractals/target/fractals-1.0.0-SNAPSHOT-jar-with-dependencies.jar \
-		pt.ulisboa.tecnico.cnv.fractals.FractalsHandler $(FRACTALS_ARGS)
+	curl -s "http://127.0.0.1:8000/fractals?w=$(W)&h=$(H)&iterations=$(I)"\
+	| awk -F',' '{print $$2}' | tr -d '" \n\r' | base64 -d > $(FRACTALS_OUT)
 
 grayscott:
 	mkdir -p $(DUMP_DIR)/grayscott
-	java -cp $(ROOT_DIR)/grayscott/target/grayscott-1.0.0-SNAPSHOT-jar-with-dependencies.jar \
-		pt.ulisboa.tecnico.cnv.grayscott.GrayScottHandler $(GRAYSCOTT_ARGS)
+	curl -s "http://127.0.0.1:8000/grayscott?size=$(SIZE)&maxIterations=$(MI)&f=$(F)&k=$(K)&stopOnExtinction=$(STOP)&seedMode=$(SEED)"\
+	| awk -F',' '{print $$2}' | tr -d '" \n\r' | base64 -d > $(GRAYSCOTT_OUT)
 
 clean-dump:
-	rm -rf $(DUMP_DIR) 
+	rm -rf $(DUMP_DIR)
+	
