@@ -1,0 +1,13 @@
+[Unit]
+Description=CNV WebServer
+After=network.target
+
+[Service]
+Type=simple
+User=ec2-user
+WorkingDirectory=/home/ec2-user
+ExecStart=/bin/bash /home/ec2-user/start-webserver.sh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

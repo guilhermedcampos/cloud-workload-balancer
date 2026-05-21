@@ -8,7 +8,7 @@ Outputs per-workload in `<outdir>/<workload>/`:
 - `<metric>_regression_summary.csv` (coefficients, stderr, t, p if available, R2)
 
 Usage:
-  python3 scripts/analysis_metrics.py --log metrics.log --outdir dump/plots-extended
+  python3 scripts/analysis/analysis_metrics.py --log metrics.log --outdir dump/plots-extended
 
 Dependencies: numpy, matplotlib; scipy is optional (for p-values).
 """
@@ -117,11 +117,8 @@ def pearsonr_safe(x, y):
 
 
 def regress(X, y):
-    # X: (n_samples, n_features) with intercept column if supplied
-    # returns dict with coef, stderr, t, p (p may be None), r2
     X = np.asarray(X, dtype=float)
     y = np.asarray(y, dtype=float)
-    # least squares
     coef, *rest = np.linalg.lstsq(X, y, rcond=None)
     y_pred = X.dot(coef)
     resid = y - y_pred
@@ -129,7 +126,6 @@ def regress(X, y):
     ss_tot = np.sum((y - np.mean(y)) ** 2)
     r2 = 1.0 - ss_res / ss_tot if ss_tot != 0 else 0.0
 
-    # stderr estimation
     n, p = X.shape[0], X.shape[1]
     dof = max(0, n - p)
     try:
@@ -159,7 +155,6 @@ def regress(X, y):
 
 
 def analyze(rows, outdir):
-    # group by workload
     by_workload = defaultdict(list)
     for r in rows:
         by_workload[r['workload']].append(r)
@@ -167,12 +162,10 @@ def analyze(rows, outdir):
     for workload, recs in by_workload.items():
         wdir = os.path.join(outdir, workload)
         ensure_dir(wdir)
-        # prepare color mapping per request (by index)
         num_reqs = len(recs)
         cmap = plt.get_cmap('tab20')
         colors_all = [cmap(i % cmap.N) for i in range(num_reqs)]
 
-        # write a requests mapping file for reference
         req_map_path = os.path.join(wdir, 'requests.csv')
         with open(req_map_path, 'w') as rm:
             rm.write('idx,timestamp,params\n')
@@ -180,7 +173,7 @@ def analyze(rows, outdir):
                 ts = r['ts'].isoformat() if r['ts'] is not None else ''
                 params_s = ';'.join(f"{k}={v}" for k, v in r['params'].items())
                 rm.write(f"{i},{ts},{params_s}\n")
-        # build numeric param list
+
         numeric_params = set()
         for r in recs:
             for k, v in r['params'].items():
@@ -190,7 +183,6 @@ def analyze(rows, outdir):
 
         metrics = ['instructions', 'blocks', 'methods']
 
-        # build data matrix
         data = {m: [] for m in metrics}
         param_data = {p: [] for p in numeric_params}
         for r in recs:
@@ -199,13 +191,11 @@ def analyze(rows, outdir):
             for p in numeric_params:
                 param_data[p].append(r['params'].get(p, np.nan))
 
-        # correlations
         corr_lines = []
         for p in numeric_params:
             for m in metrics:
                 x = np.array(param_data[p], dtype=float)
                 y = np.array(data[m], dtype=float)
-                # filter NaNs
                 mask = ~np.isnan(x) & ~np.isnan(y)
                 if np.sum(mask) < 2:
                     r_val, p_val = None, None
@@ -213,14 +203,12 @@ def analyze(rows, outdir):
                     r_val, p_val = pearsonr_safe(x[mask], y[mask])
                 corr_lines.append((p, m, r_val, p_val))
 
-        # write correlations
         corr_path = os.path.join(wdir, 'correlations.csv')
         with open(corr_path, 'w') as f:
             f.write('param,metric,pearson_r,p_value\n')
             for p, m, r_val, p_val in corr_lines:
                 f.write(f"{p},{m},{r_val if r_val is not None else ''},{p_val if p_val is not None else ''}\n")
 
-        # categorical params (non-numeric) -> boxplots per metric
         categorical_params = set()
         for r in recs:
             for k, v in r['params'].items():
@@ -229,7 +217,6 @@ def analyze(rows, outdir):
         categorical_params = sorted(categorical_params)
 
         for p in categorical_params:
-            # for each metric, collect groups
             for m in metrics:
                 groups = {}
                 for r in recs:
@@ -237,7 +224,6 @@ def analyze(rows, outdir):
                     if cat is None:
                         continue
                     groups.setdefault(cat, []).append(r[m])
-                # filter out empty groups
                 groups = {k: [v for v in vals if v is not None] for k, vals in groups.items()}
                 if not groups:
                     continue
@@ -254,7 +240,6 @@ def analyze(rows, outdir):
                 outpath = os.path.join(wdir, f"{m}_by_{p}.png")
                 plt.savefig(outpath)
                 plt.close()
-                # summary CSV
                 sumcsv = os.path.join(wdir, f"{m}_by_{p}_summary.csv")
                 with open(sumcsv, 'w') as sf:
                     sf.write('category,count,mean,median,std\n')
@@ -264,7 +249,6 @@ def analyze(rows, outdir):
                             continue
                         sf.write(f"{lbl},{vals.size},{np.mean(vals)},{np.median(vals)},{np.std(vals)}\n")
 
-        # per-metric scatter plots vs each numeric param (grid)
         for m in metrics:
             fig_cols = min(3, max(1, len(numeric_params)))
             fig_rows = math.ceil(len(numeric_params) / fig_cols) if numeric_params else 1
@@ -280,10 +264,8 @@ def analyze(rows, outdir):
                 if np.sum(mask) < 1:
                     ax.set_visible(False)
                     continue
-                # color per request index
                 colors = np.array(colors_all)[mask]
                 ax.scatter(x[mask], y[mask], s=20, c=colors, edgecolors='none')
-                # fit line
                 try:
                     coef = np.polyfit(x[mask], y[mask], 1)
                     xs = np.linspace(np.min(x[mask]), np.max(x[mask]), 50)
@@ -292,7 +274,6 @@ def analyze(rows, outdir):
                     pass
                 ax.set_xlabel(p)
                 ax.set_ylabel(m)
-            # hide unused axes
             for j in range(i+1, len(axes)):
                 axes[j].set_visible(False)
             fig.suptitle(f"{m} vs params — {workload}")
@@ -301,19 +282,16 @@ def analyze(rows, outdir):
             fig.savefig(outpath)
             plt.close(fig)
 
-            # multivariate regression: metric ~ params (with intercept)
             if numeric_params:
                 X_cols = []
                 for p in numeric_params:
                     X_cols.append(np.array(param_data[p], dtype=float))
                 X = np.vstack(X_cols).T
-                # add intercept
                 X = np.hstack([np.ones((X.shape[0], 1)), X])
                 y = np.array(data[m], dtype=float)
                 mask = ~np.isnan(X).any(axis=1) & ~np.isnan(y)
                 if np.sum(mask) >= X.shape[1]:
                     res = regress(X[mask], y[mask])
-                    # write summary
                     sum_path = os.path.join(wdir, f"{m}_regression_summary.csv")
                     with open(sum_path, 'w') as f:
                         headers = ['term', 'coef', 'stderr', 't', 'p']

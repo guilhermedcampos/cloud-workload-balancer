@@ -1,4 +1,5 @@
 .idea
+.vscode
 **/target/
 scripts/config.sh
 metrics.log
@@ -6,3 +7,7 @@ output/
 labs/lab-aws/scripts/*.id
 labs/lab-aws/scripts/*.dns
 dump
+scripts/config.sh
+scripts/instance.id
+scripts/instance.dns
+scripts/image.id

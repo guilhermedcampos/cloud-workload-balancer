@@ -3,7 +3,7 @@
 Parse `metrics.log` and plot instrumentation metrics (instructions, blocks, methods).
 
 Usage:
-  python3 scripts/plot_metrics.py --log metrics.log --outdir dump/plots
+  python3 scripts/analysis/plot_metrics.py --log metrics.log --outdir dump/plots
 
 Produces PNGs: `instructions.png`, `blocks.png`, `methods.png` (one line per workload).
 """
@@ -13,13 +13,11 @@ import os
 from collections import defaultdict
 
 import matplotlib
-# Use non-interactive backend to avoid GTK/X11 display issues in headless environments
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 
 def parse_line(line):
-    # Split into at most 7 parts to keep params intact if they contain commas
     parts = line.strip().split(',', 6)
     if len(parts) < 7:
         return None
@@ -31,6 +29,7 @@ def parse_line(line):
             ts = datetime.datetime.strptime(ts_str, "%Y-%m-%dT%H:%M:%S.%f")
         except Exception:
             ts = None
+
     def extract_num(token):
         if token is None:
             return None
@@ -47,7 +46,7 @@ def parse_line(line):
     instr = extract_num(instr)
     blocks = extract_num(blocks)
     methods = extract_num(methods)
-    # parse params like "w=800;h=600;iterations=100" into dict
+
     params_dict = {}
     try:
         for part in params.split(';'):
@@ -55,7 +54,6 @@ def parse_line(line):
                 continue
             if '=' in part:
                 k, v = part.split('=', 1)
-                # try numeric conversion
                 try:
                     if '.' in v:
                         nv = float(v)
@@ -90,7 +88,6 @@ def load_metrics(path):
             if not rec:
                 continue
             by_workload[rec['workload']].append(rec)
-    # sort each series by timestamp
     for w in by_workload:
         by_workload[w].sort(key=lambda r: (r['ts'] or datetime.datetime.min))
     return by_workload
@@ -120,9 +117,7 @@ def plot_metric(by_workload, metric, outpath):
 
 
 def plot_metric_vs_param(by_workload, metric, outdir):
-    # For each workload, find numeric params and plot metric vs param
     for workload, rows in sorted(by_workload.items()):
-        # collect candidate params
         param_values = {}
         for r in rows:
             for k, v in r['params'].items():
@@ -136,7 +131,6 @@ def plot_metric_vs_param(by_workload, metric, outdir):
         os.makedirs(workdir, exist_ok=True)
 
         for param, pairs in param_values.items():
-            # filter pairs with non-None metric
             pairs = [(x, y) for x, y in pairs if y is not None]
             if not pairs:
                 continue
@@ -176,7 +170,6 @@ def main():
         if ok:
             print(f"Wrote: {outpath}")
 
-    # Also generate metric vs numeric-parameter plots per workload
     for m in metrics:
         plot_metric_vs_param(by_workload, m, args.outdir)
 
