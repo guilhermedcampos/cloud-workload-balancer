@@ -11,6 +11,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 
+import pt.ulisboa.tecnico.cnv.loadbalancer.registry.WorkerRegistry;
+
 /**
  * Simple round-robin reverse proxy load balancer:
  * Receive req, Choose worker using round robin, Forward req to workers, Return resp to clients
@@ -37,35 +39,29 @@ public class LoadBalancingHandler implements HttpHandler {
     }
 
     /**
-     * Select worker using round robin policy.
-     */
-    private String selectWorker() {
-        int index = Math.abs(workerIndex.getAndIncrement() % workers.size());
-        return workers.get(index);
-    }
-
-    /**
      * Builds destination worker URL.
      */
     private URL buildWorkerURL(HttpExchange exchange) throws IOException {
 
-        String workerHost = selectWorker();
 
         String query = exchange.getRequestURI().getRawQuery();
 
-        String url =
-                "http://"
-                + workerHost
-                + ":"
-                + LoadBalancer.WORKER_PORT
-                + "/"
-                + workloadType;
 
-        if (query != null && !query.isEmpty()) {
-            url += "?" + query;
+        WorkerRegistry registry = WorkerRegistry.getInstance();
+
+        String ip = registry.getNextWorkerIp();
+
+        if (ip == null) {
+            throw new RuntimeException("No workers available");
         }
 
-        return new URL(url);
+        String workerAddress = "http://" + ip + ":" + LoadBalancer.WORKER_PORT + "/" + workloadType;
+
+        if (query != null && !query.isEmpty()) {
+            workerAddress += "?" + query;
+        }
+
+        return new URL(workerAddress);
     }
 
     /**

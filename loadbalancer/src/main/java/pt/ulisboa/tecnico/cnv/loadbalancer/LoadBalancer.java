@@ -4,7 +4,7 @@ import java.net.InetSocketAddress;
 import java.util.concurrent.Executors;
 
 import com.sun.net.httpserver.HttpServer;
-
+import pt.ulisboa.tecnico.cnv.loadbalancer.autoscaler.AutoScaler;
 
 public class LoadBalancer {
     public static boolean LOCALHOST = false;
@@ -42,6 +42,8 @@ public class LoadBalancer {
         });
 
         System.out.println("Load Balancer started on port " + LB_PORT);
+        AutoScaler autoScaler = AutoScaler.getInstance();
+        autoScaler.syncWorkersFromCloud();
         server.start();
     }
 }
