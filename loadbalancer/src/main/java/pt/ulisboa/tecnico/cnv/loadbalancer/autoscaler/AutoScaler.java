@@ -8,6 +8,8 @@ import com.amazonaws.services.ec2.model.*;
 
 import pt.ulisboa.tecnico.cnv.loadbalancer.registry.WorkerRegistry;
 
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.List;
 
 public class AutoScaler {
@@ -113,6 +115,18 @@ public class AutoScaler {
                 if (inst.getState().getCode() == 16) return;
 
             } catch (Exception ignored) {}
+        }
+    }
+
+    public boolean isAlive(String ip) {
+        try {
+            URL url = new URL("http://" + ip + ":8000/test");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(2000);
+            conn.setReadTimeout(2000);
+            return conn.getResponseCode() == 200;
+        } catch (Exception e) {
+            return false;
         }
     }
 }

@@ -72,12 +72,14 @@ public class FractalsHandler implements HttpHandler, RequestHandler<Map<String, 
             long instructions = ICount.getInstructionCounter();
             long blocks = ICount.getBlockCounter();
             long methods = ICount.getMethodCounter();
+            long constructors = ICount.getConstructorCounter();
+            double fragmentation = ICount.getBlockFragmentation();
             long threadId = Thread.currentThread().getId();
             String timestamp = java.time.LocalDateTime.now().toString();
 
             // Log metrics
             String logLine = String.format(
-                    "%s,fractals,w=%d;h=%d;iterations=%d,instructions=%d,blocks=%d,methods=%d,%d",
+                    "%s,fractals,w=%d;h=%d;iterations=%d,instructions=%d,blocks=%d,methods=%d,constructors=%d,fragmentation=%.4f,%d",
                     timestamp,
                     width,
                     height,
@@ -85,6 +87,8 @@ public class FractalsHandler implements HttpHandler, RequestHandler<Map<String, 
                     instructions,
                     blocks,
                     methods,
+                    constructors,
+                    fragmentation,
                     threadId
             );
             Metrics.logMetric(logLine);
