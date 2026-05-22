@@ -75,8 +75,6 @@ The system relies on the following environment variables defined in `config.sh`:
 
 ## AWS infrastructure setup
 
-## AWS infrastructure setup
-
 The deployment scripts configure:
 
 - Elastic Load Balancer (ELB)
