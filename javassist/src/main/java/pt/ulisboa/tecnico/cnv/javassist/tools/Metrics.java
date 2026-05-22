@@ -2,10 +2,17 @@ package pt.ulisboa.tecnico.cnv.javassist.tools;
 
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -14,6 +21,10 @@ import com.amazonaws.auth.EnvironmentVariableCredentialsProvider;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
 import com.amazonaws.services.dynamodbv2.model.AttributeValue;
+import com.amazonaws.services.dynamodbv2.model.BatchWriteItemRequest;
+import com.amazonaws.services.dynamodbv2.model.BatchWriteItemResult;
+import com.amazonaws.services.dynamodbv2.model.PutRequest;
+import com.amazonaws.services.dynamodbv2.model.WriteRequest;
 
 public class Metrics {
 
@@ -37,6 +48,9 @@ public class Metrics {
 
     private static final String TABLE = System.getenv("DYNAMODB_TABLE");
 
+    private static final BlockingQueue<Map<String, AttributeValue>> BUFFER =
+            new LinkedBlockingQueue<>();
+
     private static final ExecutorService WRITER = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "dynamo-writer");
         t.setDaemon(true);
@@ -44,6 +58,12 @@ public class Metrics {
     });
 
     private static final AmazonDynamoDB DYNAMO = initDynamo();
+
+    private static final ScheduledExecutorService FLUSHER = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "dynamo-flusher");
+        t.setDaemon(false);
+        return t;
+    });
 
     private Metrics() {}
 
@@ -59,6 +79,29 @@ public class Metrics {
         } catch (Exception e) {
             System.err.println("[Metrics] DynamoDB init failed: " + e.getMessage());
             return null;
+        }
+    }
+
+    static {
+        if (TABLE != null && DYNAMO != null) {
+            FLUSHER.scheduleAtFixedRate(
+                    Metrics::flushToDynamo,
+                    0,
+                    20,
+                    TimeUnit.SECONDS
+            );
+
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                FLUSHER.shutdown();
+                try {
+                    if (!FLUSHER.awaitTermination(5, TimeUnit.SECONDS)) {
+                        // allow one last synchronous flush
+                    }
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+                flushToDynamo();
+            }, "metrics-shutdown-flusher"));
         }
     }
 
@@ -118,32 +161,82 @@ public class Metrics {
         }
 
         if (TABLE != null && DYNAMO != null) {
-            final long fi = instructions, fb = blocks, fm = methods, fc = constructors, fcomp = complexity;
-            final String fl = outputLine;
+            String[] parts = outputLine.split(",", 8);
 
-            WRITER.submit(() -> {
-                try {
-                    String[] parts = fl.split(",", 8);
+            Map<String, AttributeValue> item = new HashMap<>();
+            item.put("requestId", new AttributeValue(UUID.randomUUID().toString()));
+            item.put("timestamp", new AttributeValue(parts.length > 0 ? parts[0] : ""));
+            item.put("workload", new AttributeValue(parts.length > 1 ? parts[1] : ""));
+            item.put("params", new AttributeValue(parts.length > 2 ? parts[2] : ""));
 
-                    Map<String, AttributeValue> item = new HashMap<>();
-                    item.put("requestId", new AttributeValue(UUID.randomUUID().toString()));
-                    item.put("timestamp", new AttributeValue(parts.length > 0 ? parts[0] : ""));
-                    item.put("workload", new AttributeValue(parts.length > 1 ? parts[1] : ""));
-                    item.put("params", new AttributeValue(parts.length > 2 ? parts[2] : ""));
+            item.put("instructions", new AttributeValue().withN(Long.toString(instructions)));
+            item.put("blocks", new AttributeValue().withN(Long.toString(blocks)));
+            item.put("methods", new AttributeValue().withN(Long.toString(methods)));
+            item.put("constructors", new AttributeValue().withN(Long.toString(constructors)));
+            item.put("fragmentation", new AttributeValue().withN(Double.toString(fragmentation)));
+            item.put("complexity", new AttributeValue().withN(Long.toString(complexity)));
 
-                    item.put("instructions", new AttributeValue().withN(Long.toString(fi)));
-                    item.put("blocks", new AttributeValue().withN(Long.toString(fb)));
-                    item.put("methods", new AttributeValue().withN(Long.toString(fm)));
-                    item.put("constructors", new AttributeValue().withN(Long.toString(fc)));
-                    item.put("complexity", new AttributeValue().withN(Long.toString(fcomp)));
+            boolean queued = BUFFER.offer(item);
+            if (!queued) {
+                WRITER.submit(() -> {
+                    try {
+                        DYNAMO.putItem(TABLE, item);
+                    } catch (Exception e) {
+                        System.err.println("[Metrics] DynamoDB fallback write failed: " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                });
+            }
+        }
+    }
 
-                    DYNAMO.putItem(TABLE, item);
+    private static void flushToDynamo() {
+        if (TABLE == null || DYNAMO == null) return;
 
-                } catch (Exception e) {
-                    System.err.println("[Metrics] DynamoDB write failed: " + e.getMessage());
-                    e.printStackTrace();
+        List<Map<String, AttributeValue>> drained = new ArrayList<>();
+        BUFFER.drainTo(drained, 25);
+        if (drained.isEmpty()) return;
+
+        List<WriteRequest> batch = new ArrayList<>(drained.size());
+        for (Map<String, AttributeValue> item : drained) {
+            batch.add(new WriteRequest(new PutRequest().withItem(item)));
+        }
+
+        Map<String, List<WriteRequest>> requestItems = new HashMap<>();
+        requestItems.put(TABLE, batch);
+
+        BatchWriteItemRequest request = new BatchWriteItemRequest().withRequestItems(requestItems);
+
+        int attempts = 0;
+        while (true) {
+            try {
+                BatchWriteItemResult result = DYNAMO.batchWriteItem(request);
+                Map<String, List<WriteRequest>> unprocessed = result.getUnprocessedItems();
+                if (unprocessed == null || unprocessed.isEmpty()) break;
+                attempts++;
+                if (attempts > 5) {
+                    System.err.println("[Metrics] Some items unprocessed after retries: " + unprocessed.size());
+                    break;
                 }
-            });
+                request = new BatchWriteItemRequest().withRequestItems(unprocessed);
+                try {
+                    Thread.sleep(100L * (1 << attempts));
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            } catch (Exception e) {
+                System.err.println("[Metrics] DynamoDB batchWrite failed: " + e.getMessage());
+                e.printStackTrace();
+                attempts++;
+                if (attempts > 5) break;
+                try {
+                    Thread.sleep(200L * attempts);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
         }
     }
 }

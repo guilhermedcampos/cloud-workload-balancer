@@ -8,7 +8,7 @@ This project contains the following sub-projects:
 4. `webserver` - the web server exposing the functionality of the workloads
 5. Javassist-based instrumentation (`ICount`) for runtime metrics collection
 6. Metrics extraction and local persistence to `metrics.log`
-7. DynamoDB integration for centralized metric storage (optional / enabled via environment configuration)
+7. DynamoDB integration for centralized metric storage with asynchronous buffered batch flushing
 8. AWS scripts to launch and configure EC2 worker instances, build the worker AMI and deploy infrastructure using AWS services
 
 Refer to the `README.md` files of the sub-projects to get more details about each specific sub-project.
@@ -45,7 +45,8 @@ Each EC2 worker instance runs the WebServer, which exposes:
 2. ELB distributes request across EC2 worker instances
 3. Worker processes request
 4. Javassist instrumentation collects runtime metrics
-5. Metrics are logged locally and sent to DynamoDB
+5. Metrics are logged locally and buffered for asynchronous batch persistence to DynamoDB
+6. A background flusher thread periodically writes buffered metrics to DynamoDB every 20 seconds
 
 ---
 
@@ -122,7 +123,7 @@ bash ami/create-image.sh
 bash deployment/launch-deployment-template.sh
 
 # 6. Run stress test
-tests-checkpoint/stress-test.sh
+../tests-checkpoint/stress-test.sh
 
 # 7. Teardown deployment
 bash deployment/terminate-deployment-template.sh
