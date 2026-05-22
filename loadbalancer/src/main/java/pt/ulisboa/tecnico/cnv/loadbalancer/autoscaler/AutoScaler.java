@@ -76,7 +76,7 @@ public class AutoScaler {
     public void scaleUp() {
         RunInstancesRequest req = new RunInstancesRequest()
                 .withImageId(ami)
-                .withInstanceType("t2.micro")
+                .withInstanceType("t3.micro")
                 .withMinCount(1)
                 .withMaxCount(1)
                 .withKeyName(keyName)
