@@ -26,3 +26,9 @@ aws ec2 delete-launch-template \
 # Step 4: delete Load Balancer.
 aws elb delete-load-balancer \
 	--load-balancer-name CNV-LoadBalancer
+
+# Step 5: delete DynamoDB metrics table.
+aws dynamodb delete-table --table-name CNV-Metrics 2>/dev/null && \
+    echo "DynamoDB table CNV-Metrics deleted." || \
+    echo "DynamoDB table CNV-Metrics not found, skipping."
+

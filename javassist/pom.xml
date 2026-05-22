@@ -28,6 +28,13 @@
             <artifactId>javassist</artifactId>
             <version>3.28.0-GA</version>
         </dependency>
+
+        <!-- DynamoDB for shared metrics storage across instances -->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-dynamodb</artifactId>
+            <version>1.12.767</version>
+        </dependency>
     </dependencies>
 
     <build>

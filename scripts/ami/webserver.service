@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 User=ec2-user
 WorkingDirectory=/home/ec2-user
+EnvironmentFile=-/home/ec2-user/aws.env
 ExecStart=/bin/bash /home/ec2-user/start-webserver.sh
 Restart=on-failure
 

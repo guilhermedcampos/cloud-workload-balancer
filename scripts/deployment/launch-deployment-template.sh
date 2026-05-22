@@ -2,6 +2,21 @@
 
 source "$(dirname "$(realpath "$0")")/../config.sh"
 
+# Create DynamoDB metrics table (idempotent — skips if already exists).
+EXISTING=$(aws dynamodb describe-table --table-name CNV-Metrics --query "Table.TableStatus" --output text 2>/dev/null)
+if [ -z "$EXISTING" ]; then
+    echo "Creating DynamoDB table CNV-Metrics..."
+    aws dynamodb create-table \
+        --table-name CNV-Metrics \
+        --attribute-definitions AttributeName=requestId,AttributeType=S \
+        --key-schema AttributeName=requestId,KeyType=HASH \
+        --billing-mode PAY_PER_REQUEST
+    aws dynamodb wait table-exists --table-name CNV-Metrics
+    echo "Table CNV-Metrics is ready."
+else
+    echo "DynamoDB table CNV-Metrics already exists ($EXISTING), skipping."
+fi
+
 # Create load balancer and configure health check.
 aws elb create-load-balancer \
 	--load-balancer-name CNV-LoadBalancer \
@@ -12,6 +27,23 @@ aws elb configure-health-check \
 	--load-balancer-name CNV-LoadBalancer \
 	--health-check Target=HTTP:8000/test,Interval=30,UnhealthyThreshold=2,HealthyThreshold=2,Timeout=5
 
+# Encode AWS credentials as userdata so each new instance gets them on boot.
+# The webserver.service reads /home/ec2-user/aws.env via EnvironmentFile.
+USERDATA=$(base64 -w 0 << EOF
+#!/bin/bash
+cat > /home/ec2-user/aws.env << 'ENVEOF'
+AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN
+AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION
+DYNAMODB_TABLE=CNV-Metrics
+ENVEOF
+chown ec2-user:ec2-user /home/ec2-user/aws.env
+chmod 600 /home/ec2-user/aws.env
+systemctl restart webserver
+EOF
+)
+
 # Create launch template.
 aws ec2 create-launch-template \
 	--launch-template-name CNV-LaunchTemplate \
@@ -21,7 +53,8 @@ aws ec2 create-launch-template \
 		\"InstanceType\": \"t3.micro\",
 		\"KeyName\": \"$AWS_KEYPAIR_NAME\",
 		\"SecurityGroupIds\": [\"$AWS_SECURITY_GROUP\"],
-		\"Monitoring\": {\"Enabled\": true}
+		\"Monitoring\": {\"Enabled\": true},
+		\"UserData\": \"$USERDATA\"
 }"
 
 # Create auto scaling group.
