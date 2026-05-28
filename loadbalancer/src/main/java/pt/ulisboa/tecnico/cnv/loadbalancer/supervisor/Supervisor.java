@@ -113,6 +113,34 @@ public class Supervisor {
 
     }
 
+    public Worker getBestWorker(int cost) {
+        WorkerPool pool = this.pools.get(WorkerPoolType.WORKING);
+        Worker worker = pool.getAvailableWorker(cost);
+        if (worker != null) {
+            return worker;
+        }
+
+        // No workers available, check if there are any workers that should be terminating soon
+        pool = this.pools.get(WorkerPoolType.TERMINATING);
+        worker = pool.getAvailableWorker(cost);
+        if (worker != null) {
+            return worker;
+        }
+
+        // lambda functions
+        return null;
+    }
+    
+
+    public void registerRequestForWorker(Worker worker, long requestId, int cost) {
+        WorkerPool pool = this.workers.get(worker);
+        if (pool == null) {
+            throw new RuntimeException("Worker not found in any pool");
+        }
+
+        worker.updateLoad(requestId, cost);
+    }
+    
     private void unresponsiveWorker(Worker worker) {
         // Send worker to non responsive pool
         this.activeWorkersPool.sendWorkerToPool(worker, this.nonResponsivePool);
@@ -214,7 +242,7 @@ public class Supervisor {
             return false;
         }
 
-        Worker worker = new Worker(inst.getInstanceId(), inst.getPublicIpAddress());
+        Worker worker = new Worker(inst);
 
         if (this.workers.containsKey(worker)) {
             return false;

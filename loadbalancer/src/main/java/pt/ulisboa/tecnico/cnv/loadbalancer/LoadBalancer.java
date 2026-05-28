@@ -2,11 +2,13 @@ package pt.ulisboa.tecnico.cnv.loadbalancer;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.sun.net.httpserver.HttpServer;
 import pt.ulisboa.tecnico.cnv.loadbalancer.autoscaler.AutoScaler;
 
 public class LoadBalancer {
+    public static final AtomicLong requestId = new AtomicLong(0);
     public static boolean LOCALHOST = false;
     public static int LB_PORT = 8080;
     public static final int WORKER_PORT = 8000;

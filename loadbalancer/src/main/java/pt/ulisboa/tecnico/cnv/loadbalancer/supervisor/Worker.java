@@ -1,6 +1,10 @@
 package pt.ulisboa.tecnico.cnv.loadbalancer.supervisor;
 
+import com.amazonaws.services.ec2.model.Instance;
+import org.apache.commons.lang3.tuple.Pair;
 import java.util.Comparator;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -23,11 +27,14 @@ public class Worker {
     private ReadWriteLock cpuUsageLock = new ReentrantReadWriteLock();
     private double cpuUsage = 0;
 
-    
+    private Instance instance;
+    private final ReadWriteLock loadRWLock = new ReentrantReadWriteLock();
+    private final Set<Pair<Long, Integer>> currentLoad = new HashSet<>();
 
-    public Worker(String id, String ip){
-        this.id  = id;
-        this.ip = ip;
+    public Worker(Instance instance) {
+        this.instance = instance;
+        this.id = instance.getInstanceId();
+        this.ip = instance.getPublicIpAddress();
     }
 
     public String getId(){
@@ -60,6 +67,28 @@ public class Worker {
             this.cpuUsage = sum / CPU_USAGE_HISTORY_SIZE;
         } finally {
             cpuUsageLock.writeLock().unlock();
+        }
+    }
+
+    public Instance getInstance() {
+        return instance;
+    }
+
+    public void updateLoad(long requestId, int cost) {
+        loadRWLock.writeLock().lock();
+        try {
+            currentLoad.add(Pair.of(requestId, cost));
+        } finally {
+            loadRWLock.writeLock().unlock();
+        }
+    }
+
+    public int getLoad() {
+        loadRWLock.readLock().lock();
+        try {
+            return currentLoad.stream().mapToInt(Pair::getRight).sum();
+        } finally {
+            loadRWLock.readLock().unlock();
         }
     }
 

@@ -12,6 +12,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Supervisor;
+import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Worker;
 
 /**
  * Simple round-robin reverse proxy load balancer:
@@ -41,21 +42,10 @@ public class LoadBalancingHandler implements HttpHandler {
     /**
      * Builds destination worker URL.
      */
-    private URL buildWorkerURL(HttpExchange exchange) throws IOException {
-
-
+    private URL buildWorkerURL(HttpExchange exchange, Worker worker) throws IOException {
         String query = exchange.getRequestURI().getRawQuery();
-
-        //TODO: fetch or estimate cost (complexity here)
-        int cost = 100;
-
-        String ip = Supervisor.getInstance().getLazyWorker(cost).getIp();
-
-        if (ip == null) {
-            throw new RuntimeException("No workers available");
-        }
-
-        String workerAddress = "http://" + ip + ":" + LoadBalancer.WORKER_PORT + "/" + workloadType;
+        String workerAddress = "http://" + worker.getInstance().getPublicIpAddress()
+                + ":" + LoadBalancer.WORKER_PORT + "/" + workloadType;
 
         if (query != null && !query.isEmpty()) {
             workerAddress += "?" + query;
@@ -116,6 +106,14 @@ public class LoadBalancingHandler implements HttpHandler {
 
     @Override
     public void handle(HttpExchange exchange) throws IOException {
+        long requestId = LoadBalancer.requestId.incrementAndGet();
+        int cost = 100; // placeholder until you add real estimation
+
+        Worker worker = Supervisor.getInstance().getBestWorker(cost);
+        if (worker == null) {
+            throw new RuntimeException("No workers available");
+        }
+        Supervisor.getInstance().registerRequestForWorker(worker, requestId, cost);
 
         long start = System.currentTimeMillis();
 
@@ -123,7 +121,7 @@ public class LoadBalancingHandler implements HttpHandler {
 
         try {
 
-            URL workerURL = buildWorkerURL(exchange);
+            URL workerURL = buildWorkerURL(exchange, worker);
 
             System.out.println(
                     "[LB] "
@@ -145,6 +143,7 @@ public class LoadBalancingHandler implements HttpHandler {
 
             // Forward request data.
             copyRequestHeaders(exchange, connection);
+            connection.addRequestProperty("X-Request-Id", Long.toString(requestId));
             forwardRequestBody(exchange, connection);
 
             // Obtain worker response.
