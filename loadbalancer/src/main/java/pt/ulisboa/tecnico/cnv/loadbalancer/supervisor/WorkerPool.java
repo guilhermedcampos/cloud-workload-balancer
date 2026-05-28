@@ -11,11 +11,18 @@ public class WorkerPool {
         WORKING, TERMINATING, NON_RESPONSIVE
     }
 
+    private final int MAX_LOAD_THRESHOLD = 10000; //TODO: Adjust later
+
+    private final double OPTIMAL_CPU_THRESHOLD = 0.4; //TODO: Adjust later
+    private final double HIGH_CPU_THRESHOLD = 0.8;
+    private final double MAX_CPU_THRESHOLD = 1.0;
+
+
     private final WorkerPoolType type;
 
     private int size = 0;
-    private final SortedSet<Worker> decreasingCPUWorkers = new TreeSet<>(new Worker.CPUComparator());
-    //  private final SortedSet<Worker> decreasingLoadWorkers = new TreeSet<>(new Worker.LoadComparator());
+    // private final SortedSet<Worker> sortedByHighCPU = new TreeSet<>(new Worker.CPUComparator());
+    private final SortedSet<Worker> sortedByHighLoad = new TreeSet<>(new Worker.LoadComparator());
 
     private final Object lock = new Object();
 
@@ -30,20 +37,22 @@ public class WorkerPool {
     public void addWorker(Worker worker) {
         synchronized (lock) {
             size++;
-            decreasingCPUWorkers.add(worker);
+            // sortedByHighCPU.add(worker);
+            sortedByHighLoad.add(worker);
         }
     }
 
     public void removeWorker(Worker worker) {
         synchronized (lock) {
             size--;
-            decreasingCPUWorkers.remove(worker);
+            // sortedByHighCPU.remove(worker);
+            sortedByHighLoad.remove(worker);
         }
     }
 
     public boolean containsWorker(Worker worker) {
         synchronized (lock) {
-            return decreasingCPUWorkers.contains(worker);
+            return sortedByHighLoad.contains(worker);
         }
     }
 
@@ -59,24 +68,38 @@ public class WorkerPool {
         }
     }
 
-    //TODO: Add load for each worker and assign the worker with least load, for now CPU usage is used as a proxy for load
     public Worker getAvailableWorker(int cost) {
-        // for (Worker worker : decreasingLoadWorkers) {
-        //     if (worker.getLoad() + cost < HIGH_CONCURRENT_LOAD) {
-        //         return worker;
-        //     }
-        // }
-        for (Worker worker : decreasingCPUWorkers) {
-            if (worker.getCpuUsage() < 1.0) {
-                return worker;
-            }
+        synchronized (lock) {
+            // 1) Prefer workers in [OPTIMAL_CPU_THRESHOLD, HIGH_CPU_THRESHOLD)
+            Worker candidate = findHighestLoadInRange(cost, OPTIMAL_CPU_THRESHOLD, HIGH_CPU_THRESHOLD);
+            if (candidate != null) return candidate;
+
+            // 2) Then try [HIGH_CPU_THRESHOLD, MAX_CPU_THRESHOLD]
+            candidate = findHighestLoadInRange(cost, HIGH_CPU_THRESHOLD, MAX_CPU_THRESHOLD + Double.MIN_VALUE);
+            if (candidate != null) return candidate;
+
+            // 3) Finally, try below OPTIMAL_CPU_THRESHOLD (including 0.0)
+            candidate = findHighestLoadInRange(cost, 0.0, OPTIMAL_CPU_THRESHOLD);
+            return candidate;
         }
-        return null;
+    }
+
+    // Caller must hold 'lock' when invoking this helper.
+    private Worker findHighestLoadInRange(int cost, double minCpuInclusive, double maxCpuExclusive) {
+        // Iterate sortedByHighLoad (highest load first) and pick first matching CPU range
+        return sortedByHighLoad.stream()
+                .filter(worker -> {
+                    double cpu = worker.getCpuUsage();
+                    return cpu >= minCpuInclusive && cpu < maxCpuExclusive;
+                })
+                .filter(worker -> worker.getLoad() + cost < MAX_LOAD_THRESHOLD)
+                .findFirst()
+                .orElse(null);
     }
 
     public SortedSet<Worker> getWorkers() {
         synchronized (lock) {
-            return new TreeSet<>(decreasingCPUWorkers);
+            return new TreeSet<>(sortedByHighLoad);
         }
     }
 

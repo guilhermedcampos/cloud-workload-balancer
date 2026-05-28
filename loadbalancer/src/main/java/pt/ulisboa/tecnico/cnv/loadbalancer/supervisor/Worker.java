@@ -1,20 +1,32 @@
 package pt.ulisboa.tecnico.cnv.loadbalancer.supervisor;
 
-import com.amazonaws.services.ec2.model.Instance;
-import org.apache.commons.lang3.tuple.Pair;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import org.apache.commons.lang3.tuple.Pair;
+
+import com.amazonaws.services.ec2.model.Instance;
+
 public class Worker {
+    // Comparators
+    // To order all workers on workpools by decreasing cpu and decreasing load
     public static class CPUComparator implements Comparator<Worker> {
         @Override
         public int compare(Worker w1, Worker w2) {
             return Double.compare(w2.getCpuUsage(), w1.getCpuUsage());
         }
     }
+
+    public static class LoadComparator implements Comparator<Worker> {
+        @Override
+        public int compare(Worker w1, Worker w2) {
+            return Double.compare(w2.getLoad(), w1.getLoad());
+        }
+    }
+
 
     public static final int HISTORY_RANGE = 15000;
     private static final int CPU_USAGE_HISTORY_SIZE = HISTORY_RANGE / Supervisor.HEALTH_CHECK_INTERVAL;

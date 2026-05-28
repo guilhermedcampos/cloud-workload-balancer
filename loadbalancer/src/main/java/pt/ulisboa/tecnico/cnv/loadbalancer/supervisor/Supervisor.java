@@ -171,8 +171,7 @@ public class Supervisor {
 
     }
 
-    //TODO: See if we want to try and compact the most for scaledown reducing cost (having more pools and trying to fit the load on higher usage pools)
-    public Worker getLazyWorker(int cost) {
+        public Worker getOptimalWorker(int cost) {
         WorkerPool pool = this.pools.get(WorkerPoolType.WORKING);
         Worker worker = pool.getAvailableWorker(cost);
         if (worker != null) {
