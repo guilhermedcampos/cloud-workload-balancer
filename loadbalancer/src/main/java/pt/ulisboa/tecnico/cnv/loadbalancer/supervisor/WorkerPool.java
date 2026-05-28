@@ -16,9 +16,6 @@ public class WorkerPool {
 
     private final WorkerPoolType type;
 
-    private final List<Worker> workers = new ArrayList<>();
-    private final AtomicInteger rrIndex = new AtomicInteger(0);
-
     int size = 0;
     private final SortedSet<Worker> decreasingCPUWorkers = new TreeSet<>(new Worker.CPUComparator());
     //  private final SortedSet<Worker> decreasingLoadWorkers = new TreeSet<>(new Worker.LoadComparator());
@@ -34,15 +31,15 @@ public class WorkerPool {
     }
 
     public void addWorker(Worker worker) {
-        size++;
         synchronized (lock) {
+            size++;
             decreasingCPUWorkers.add(worker);
         }
     }
 
     public void removeWorker(Worker worker) {
-        size--;
         synchronized (lock) {
+            size--;
             decreasingCPUWorkers.remove(worker);
         }
     }
