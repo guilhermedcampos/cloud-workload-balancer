@@ -1,10 +1,7 @@
 package pt.ulisboa.tecnico.cnv.loadbalancer.supervisor;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeSet;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Worker registry.
@@ -16,7 +13,7 @@ public class WorkerPool {
 
     private final WorkerPoolType type;
 
-    int size = 0;
+    private int size = 0;
     private final SortedSet<Worker> decreasingCPUWorkers = new TreeSet<>(new Worker.CPUComparator());
     //  private final SortedSet<Worker> decreasingLoadWorkers = new TreeSet<>(new Worker.LoadComparator());
 
@@ -58,7 +55,7 @@ public class WorkerPool {
         if (this.containsWorker(worker)) {
             this.removeWorker(worker);
             other.addWorker(worker);
-            System.out.println(String.format(".(WorkerPool) Worker %s moved from %s to %s", worker.getInstance().getPublicIpAddress(), this.type.name(), other.type.name()));
+            System.out.println(String.format(".(WorkerPool) Worker %s moved from %s to %s", worker.getIp(), this.type.name(), other.type.name()));
         }
     }
 
@@ -70,7 +67,7 @@ public class WorkerPool {
         //     }
         // }
         for (Worker worker : decreasingCPUWorkers) {
-            if (worker.getCpuUsage() + cost < 100) {
+            if (worker.getCpuUsage() < 1.0) {
                 return worker;
             }
         }
