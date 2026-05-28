@@ -16,7 +16,7 @@ import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.WorkerPool.WorkerPoolType;
 public class Supervisor {
     private static Supervisor instance = null;
     static final int HEALTH_CHECK_INTERVAL = 5000;
-    private static final int SECONDS_TO_WAIT_FOR_STARTUP = 30;
+    private static final int STARTUP = 30;
     private static final int SECOND_TILL_DEATH = 30;
     private static final int WORKER_PORT = LoadBalancer.WORKER_PORT;
 
@@ -58,7 +58,7 @@ public class Supervisor {
 
     private HttpResponse<String> healthCheck(String ipAddress, Duration timeout) {
         HttpClient client = HttpClient.newHttpClient();
-        String url = "http://" + ipAddress + ":" + WORKER_PORT + "/health";
+        String url = "http://" + ipAddress + ":" + WORKER_PORT + "/test";
         HttpRequest request = HttpRequest.newBuilder().timeout(timeout)
             .uri(URI.create(url))
             .GET()
@@ -84,7 +84,7 @@ public class Supervisor {
                 HttpResponse<String> response = healthCheck(worker.getIp(), Duration.ofSeconds(2));
                 
                 if (response == null) {
-                    System.out.println(String.format(".(Supervisor) [%s] Worker is unreachable. May be dead or with high latency.", worker.getIp()));
+                    System.out.println(String.format("[Supervisor] [%s] Worker is unreachable. May be dead or with high latency.", worker.getIp()));
                     unresponsiveWorker(worker);
                     return;
                 }
@@ -93,7 +93,7 @@ public class Supervisor {
                     //TODO: unhandled case: the supervisor assumes that in this case the instance is dead
                     //and removes it from every list. Possible problem: incorrect instances are kept alive
                     // doing nothing instead of being killed.
-                    System.out.println(String.format(".(Supervisor) [%s] Worker is not responding to health check. Removing it.", worker.getIp()));
+                    System.out.println(String.format("[Supervisor] [%s] Worker is not responding to health check. Removing it.", worker.getIp()));
                     unresponsiveWorker(worker);
                 } else {
                     String res = response.body();
@@ -105,7 +105,7 @@ public class Supervisor {
 
                     double cpuUsage = Double.parseDouble(splitRes[1]);
                     worker.updateCpuUsage(cpuUsage);
-                    System.out.println(String.format(".(Supervisor) [%s] OK | CPU Usage: %f", worker.getIp(), cpuUsage));
+                    System.out.println(String.format("[Supervisor] [%s] OK | CPU Usage: %f", worker.getIp(), cpuUsage));
                 }
                 
             }).start();
@@ -207,5 +207,49 @@ public class Supervisor {
         }
 
         return queue;
+    }
+
+    public boolean registerActiveInstance(com.amazonaws.services.ec2.model.Instance inst) {
+        if (inst == null || inst.getPublicIpAddress() == null) {
+            return false;
+        }
+
+        Worker worker = new Worker(inst.getInstanceId(), inst.getPublicIpAddress());
+
+        if (this.workers.containsKey(worker)) {
+            return false;
+        }
+
+        for (int i = 0; i < STARTUP; i++) {
+            HttpResponse<String> response = healthCheck(
+                    worker.getIp(),
+                    Duration.ofSeconds(1)
+            );
+
+            if (response != null && response.statusCode() / 100 == 2) {
+                System.out.println(String.format(
+                        "[Supervisor] [%s] Worker is responding. Adding to worker pool.",
+                        worker.getIp()
+                ));
+                this.activeWorkersPool.addWorker(worker);
+                this.workers.put(worker, this.activeWorkersPool);
+                return true;
+            }
+
+            System.out.println(String.format(
+                    "[Supervisor] [%s] Worker is unreachable. Keep trying for %d seconds",
+                    worker.getIp(),
+                    STARTUP - i
+            ));
+
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+
+        return false;
     }
 }

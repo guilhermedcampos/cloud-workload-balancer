@@ -61,17 +61,17 @@ public class AutoScaler {
     public void syncWorkersFromCloud() {
         DescribeInstancesResult res = ec2.describeInstances();
 
-        for (Reservation r : res.getReservations()) {
-            for (Instance i : r.getInstances()) {
+        for (Reservation reservation : res.getReservations()) {
+            for (Instance instance : reservation.getInstances()) {
+                if (instance.getPublicIpAddress() == null) continue;
+                if (instance.getState().getCode() != 16) continue;
+                if (isLBInstance(instance)) continue;
 
-                if (i.getPublicIpAddress() == null) continue;
-                if (i.getState().getCode() != 16) continue;
-
-                registry.addWorker(i.getInstanceId(), i.getPublicIpAddress());
+                supervisor.registerActiveInstance(instance);
             }
         }
 
-        System.out.println("[AutoScaler] Synced workers: " + registry.size());
+        System.out.println("[AutoScaler] Synced workers from cloud.");
     }
 
     public void scaleUp() {
@@ -130,6 +130,33 @@ public class AutoScaler {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    private boolean isLBInstance(Instance instance) {
+        if (instance == null) {
+            return false;
+        }
+
+        String lbInstanceId = System.getenv("LB_INSTANCE_ID");
+        if (lbInstanceId != null && !lbInstanceId.isBlank()
+                && lbInstanceId.equals(instance.getInstanceId())) {
+            return true;
+        }
+
+        for (Tag tag : instance.getTags()) {
+            String key = tag.getKey() == null ? "" : tag.getKey().trim().toLowerCase();
+            String value = tag.getValue() == null ? "" : tag.getValue().trim().toLowerCase();
+
+            boolean lbValue = value.equals("load-balancer")
+                    || value.equals("loadbalancer")
+                    || value.equals("lb");
+
+            if ((key.equals("type") || key.equals("role") || key.equals("component")) && lbValue) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
 }
