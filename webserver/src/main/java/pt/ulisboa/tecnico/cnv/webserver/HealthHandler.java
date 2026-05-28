@@ -2,17 +2,21 @@ package pt.ulisboa.tecnico.cnv.webserver;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import com.sun.net.httpserver.HttpHandler;
+import java.lang.management.ManagementFactory;
+
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 
-public class HealthHandler implements HttpHandler {
+import com.sun.management.OperatingSystemMXBean;
 
+public class HealthHandler implements HttpHandler{
     @Override
     public void handle(HttpExchange he) throws IOException {
-        String response = "OK";
-        he.sendResponseHeaders(200, response.length());
+        double cpuLoad = ManagementFactory.getPlatformMXBean(OperatingSystemMXBean.class).getSystemCpuLoad();
+
+        he.sendResponseHeaders(200, 0);
         OutputStream os = he.getResponseBody();
-        os.write(response.getBytes());
+        os.write(("OK: " + String.format("%.3f", cpuLoad)).getBytes());
         os.close();
     }
 }

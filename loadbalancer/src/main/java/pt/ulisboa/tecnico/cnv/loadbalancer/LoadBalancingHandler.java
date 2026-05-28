@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 
-import pt.ulisboa.tecnico.cnv.loadbalancer.registry.WorkerRegistry;
+import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Supervisor;
 
 /**
  * Simple round-robin reverse proxy load balancer:
@@ -46,10 +46,10 @@ public class LoadBalancingHandler implements HttpHandler {
 
         String query = exchange.getRequestURI().getRawQuery();
 
+        //TODO: fetch or estimate cost (complexity here)
+        int cost = 100;
 
-        WorkerRegistry registry = WorkerRegistry.getInstance();
-
-        String ip = registry.getNextWorkerIp();
+        String ip = Supervisor.getInstance().getLazyWorker(cost).getIp();
 
         if (ip == null) {
             throw new RuntimeException("No workers available");

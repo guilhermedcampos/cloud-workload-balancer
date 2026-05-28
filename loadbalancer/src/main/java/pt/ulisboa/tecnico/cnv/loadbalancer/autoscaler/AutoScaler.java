@@ -6,7 +6,8 @@ import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
 import com.amazonaws.services.ec2.model.*;
 
-import pt.ulisboa.tecnico.cnv.loadbalancer.registry.WorkerRegistry;
+import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Supervisor;
+import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.WorkerPool;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -17,7 +18,7 @@ public class AutoScaler {
     private static AutoScaler singleton;
 
     private final AmazonEC2 ec2;
-    private final WorkerRegistry registry;
+    private final Supervisor supervisor;
 
     private final String ami;
     private final String keyName;
@@ -35,7 +36,7 @@ public class AutoScaler {
                 .withCredentials(new EnvironmentVariableCredentialsProvider())
                 .build();
 
-        this.registry = WorkerRegistry.getInstance();
+        this.supervisor = Supervisor.getInstance();
 
         this.ami = System.getenv("AWS_AMI_ID");
         this.keyName = System.getenv("AWS_KEYPAIR_NAME");
@@ -98,7 +99,8 @@ public class AutoScaler {
 
         ec2.terminateInstances(req);
 
-        registry.removeWorker(instanceId);
+        //TODO: adapt autoscaler to new supervisor
+        // Supervisor.getInstance().removeWorker(instanceId);
 
         System.out.println("[AutoScaler] Terminated: " + instanceId);
     }
@@ -129,4 +131,5 @@ public class AutoScaler {
             return false;
         }
     }
+
 }
