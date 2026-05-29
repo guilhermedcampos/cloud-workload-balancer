@@ -8,14 +8,19 @@ import com.amazonaws.services.ec2.model.*;
 
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Supervisor;
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.WorkerPool;
+import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Worker;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.List;
+import java.util.PriorityQueue;
+import java.util.Set;
 
 public class AutoScaler {
 
     private static AutoScaler singleton;
+
+    private static final int RUNNING_STATE_CODE = 16;
 
     private final AmazonEC2 ec2;
     private final Supervisor supervisor;
@@ -45,6 +50,24 @@ public class AutoScaler {
         validateEnv();
     }
 
+    public void start() {
+        syncWorkersFromCloud();
+
+        new Thread(() -> {
+            while (true) {
+                try {
+                    handleScaleUp();
+                    handleScaleDown();
+                    handleTerminateInstances();
+                    Thread.sleep(5000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }).start();
+    }
+    
     public static synchronized AutoScaler getInstance() {
         if (singleton == null) {
             singleton = new AutoScaler();
@@ -64,7 +87,7 @@ public class AutoScaler {
         for (Reservation reservation : res.getReservations()) {
             for (Instance instance : reservation.getInstances()) {
                 if (instance.getPublicIpAddress() == null) continue;
-                if (instance.getState().getCode() != 16) continue;
+                if (instance.getState().getCode() != RUNNING_STATE_CODE) continue;
                 if (isLBInstance(instance)) continue;
 
                 supervisor.registerActiveInstance(instance);
@@ -72,6 +95,24 @@ public class AutoScaler {
         }
 
         System.out.println("[AutoScaler] Synced workers from cloud.");
+    }
+
+    private Instance waitUntilRunning(Instance inst) {
+        for (int i = 0; i < 30; i++) {
+            try {
+                Thread.sleep(1000);
+
+                Instance updatedInst = ec2.describeInstances(
+                        new DescribeInstancesRequest().withInstanceIds(inst.getInstanceId())
+                ).getReservations().get(0).getInstances().get(0);
+
+                if (updatedInst.getState().getCode() == RUNNING_STATE_CODE) {
+                    return updatedInst;
+                }
+
+            } catch (Exception ignored) {}
+        }
+        return null;
     }
 
     public void scaleUp() {
@@ -93,6 +134,26 @@ public class AutoScaler {
         syncWorkersFromCloud();
     }
 
+    private void handleScaleUp() {
+        RunInstancesRequest request = new RunInstancesRequest()
+                .withImageId(ami)
+                .withInstanceType("t3.micro")
+                .withMinCount(1)
+                .withMaxCount(1)
+                .withKeyName(keyName)
+                .withSecurityGroupIds(securityGroup);
+
+        RunInstancesResult result = ec2.runInstances(request);
+        Instance instance = result.getReservation().getInstances().get(0);
+
+        waitForRunning(instance.getInstanceId());
+
+        Instance runningInstance = waitUntilRunning(instance);
+        if (runningInstance != null && runningInstance.getState().getCode() == RUNNING_STATE_CODE) {
+            supervisor.registerActiveInstance(runningInstance);
+        }
+    }
+    
     public void scaleDown(String instanceId) {
         TerminateInstancesRequest req = new TerminateInstancesRequest()
                 .withInstanceIds(instanceId);
@@ -105,6 +166,31 @@ public class AutoScaler {
         System.out.println("[AutoScaler] Terminated: " + instanceId);
     }
 
+    private void handleScaleDown() {
+        Set<Worker> excessWorkers = supervisor.getExcessWorkers();
+        for (Worker worker : excessWorkers) {
+            supervisor.toRemoveWorker(worker);
+        }
+    }
+
+    private void terminateInstance(Instance instance) {
+        TerminateInstancesRequest req = new TerminateInstancesRequest()
+                .withInstanceIds(instance.getInstanceId());
+
+        ec2.terminateInstances(req);
+
+        System.out.println("[AutoScaler] Terminated: " + instance.getInstanceId());
+    }
+    
+    private void handleTerminateInstances() {
+        PriorityQueue<Worker> queue = supervisor.getTerminationCandidates();
+
+        for (Worker worker : queue) {
+            terminateInstance(worker.getInstance());
+            supervisor.removeInactiveWorker(worker);
+        }
+    }
+    
     private void waitForRunning(String id) {
         for (int i = 0; i < 30; i++) {
             try {
@@ -114,7 +200,7 @@ public class AutoScaler {
                         new DescribeInstancesRequest().withInstanceIds(id)
                 ).getReservations().get(0).getInstances().get(0);
 
-                if (inst.getState().getCode() == 16) return;
+                if (inst.getState().getCode() == RUNNING_STATE_CODE) return;
 
             } catch (Exception ignored) {}
         }

@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import com.sun.net.httpserver.HttpServer;
 import pt.ulisboa.tecnico.cnv.loadbalancer.autoscaler.AutoScaler;
+import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Supervisor;
 
 public class LoadBalancer {
     public static final AtomicLong requestId = new AtomicLong(0);
@@ -44,8 +45,13 @@ public class LoadBalancer {
         });
 
         System.out.println("Load Balancer started on port " + LB_PORT);
+
+        Supervisor supervisor = Supervisor.getInstance();
+        Supervisor.getInstance().start();
+
         AutoScaler autoScaler = AutoScaler.getInstance();
-        autoScaler.syncWorkersFromCloud();
+        AutoScaler.getInstance().start();
+
         server.start();
     }
 }

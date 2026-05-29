@@ -200,6 +200,31 @@ public class Supervisor {
         this.workers.remove(worker);
     }
 
+    public Set<Worker> getExcessWorkers() {
+        WorkerPool workingPool = this.pools.get(WorkerPoolType.WORKING);
+        Set<Worker> candidates = new HashSet<>();
+
+        if (workingPool.size() <= 1) {
+            return candidates;
+        }
+
+        for (Worker worker : workingPool.getWorkers()) {
+            if (worker.getLoad() == 0) { // TODO check
+                candidates.add(worker);
+            }
+        }
+
+        if (candidates.size() == workingPool.size()) {
+            Iterator<Worker> iterator = candidates.iterator();
+            if (iterator.hasNext()) {
+                iterator.next();
+                iterator.remove();
+            }
+        }
+
+        return candidates;
+    }
+    
     public void toRemoveWorker(Worker worker) {
         WorkerPool pool = this.workers.get(worker);
         if (pool == null) {
@@ -223,12 +248,17 @@ public class Supervisor {
         return queue;
     }
 
-    public PriorityQueue<Worker> getFreeToRemoveWorkers() {
-        PriorityQueue<Worker> queue = new PriorityQueue<>();
+    public PriorityQueue<Worker> getTerminationCandidates() {
+        PriorityQueue<Worker> queue = new PriorityQueue<>(
+                Comparator.comparingDouble(Worker::getCpuUsage)
+                        .thenComparingInt(Worker::getLoad)
+        );
 
-        for (Worker worker : terminatingPool.getWorkers()) {   
+        WorkerPool terminatingPool = this.pools.get(WorkerPoolType.TERMINATING);
+
+        for (Worker worker : terminatingPool.getWorkers()) {
             //TODO: Add load for each worker and assign the worker with least load, for now CPU usage is used as a proxy for load         
-            if (worker.getCpuUsage() == 0) {
+            if (worker.getLoad() == 0) {
                 queue.add(worker);
             }
         }

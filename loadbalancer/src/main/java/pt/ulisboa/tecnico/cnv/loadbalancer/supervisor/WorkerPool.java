@@ -64,7 +64,7 @@ public class WorkerPool {
         if (this.containsWorker(worker)) {
             this.removeWorker(worker);
             other.addWorker(worker);
-            System.out.println(String.format(".(WorkerPool) Worker %s moved from %s to %s", worker.getIp(), this.type.name(), other.type.name()));
+            System.out.println(String.format("[WorkerPool] Worker %s moved from %s to %s", worker.getIp(), this.type.name(), other.type.name()));
         }
     }
 
