@@ -111,26 +111,7 @@ public class Supervisor {
             }).start();
         }
 
-    }
-
-    public Worker getBestWorker(int cost) {
-        WorkerPool pool = this.pools.get(WorkerPoolType.WORKING);
-        Worker worker = pool.getAvailableWorker(cost);
-        if (worker != null) {
-            return worker;
-        }
-
-        // No workers available, check if there are any workers that should be terminating soon
-        pool = this.pools.get(WorkerPoolType.TERMINATING);
-        worker = pool.getAvailableWorker(cost);
-        if (worker != null) {
-            return worker;
-        }
-
-        // lambda functions
-        return null;
-    }
-    
+    }    
 
     public void registerRequestForWorker(Worker worker, long requestId, int cost) {
         WorkerPool pool = this.workers.get(worker);
@@ -171,7 +152,7 @@ public class Supervisor {
 
     }
 
-        public Worker getOptimalWorker(int cost) {
+    public Worker getOptimalWorker(int cost) {
         WorkerPool pool = this.pools.get(WorkerPoolType.WORKING);
         Worker worker = pool.getAvailableWorker(cost);
         if (worker != null) {
@@ -186,7 +167,6 @@ public class Supervisor {
         }
 
         // No worker is available in order to preserve a good load balance, use lambda functions
-        // This case will probably happen when waiting for system to scale up
         return null;
     }
 
@@ -239,8 +219,7 @@ public class Supervisor {
         PriorityQueue<Worker> queue = new PriorityQueue<>();
         for (Worker worker : this.workers.keySet()) {
             if (this.workers.get(worker).getType() != WorkerPoolType.TERMINATING) {
-                //TODO: Add load for each worker and assign the worker with least load, for now CPU usage is used as a proxy for load
-                if (worker.getCpuUsage() == 0) {
+                if (worker.getLoad() == 0) {
                     queue.add(worker);
                 }
             }
@@ -257,7 +236,6 @@ public class Supervisor {
         WorkerPool terminatingPool = this.pools.get(WorkerPoolType.TERMINATING);
 
         for (Worker worker : terminatingPool.getWorkers()) {
-            //TODO: Add load for each worker and assign the worker with least load, for now CPU usage is used as a proxy for load         
             if (worker.getLoad() == 0) {
                 queue.add(worker);
             }

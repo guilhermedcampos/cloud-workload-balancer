@@ -21,7 +21,7 @@ public class WorkerPool {
     private final WorkerPoolType type;
 
     private int size = 0;
-    // private final SortedSet<Worker> sortedByHighCPU = new TreeSet<>(new Worker.CPUComparator());
+    
     private final SortedSet<Worker> sortedByHighLoad = new TreeSet<>(new Worker.LoadComparator());
 
     private final Object lock = new Object();

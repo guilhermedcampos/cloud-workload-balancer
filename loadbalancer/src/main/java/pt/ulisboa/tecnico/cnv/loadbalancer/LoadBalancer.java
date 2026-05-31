@@ -5,6 +5,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.sun.net.httpserver.HttpServer;
+
 import pt.ulisboa.tecnico.cnv.loadbalancer.autoscaler.AutoScaler;
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Supervisor;
 
@@ -13,15 +14,20 @@ public class LoadBalancer {
     public static boolean LOCALHOST = false;
     public static int LB_PORT = 8080;
     public static final int WORKER_PORT = 8000;
-
+    
     public static void main(String[] args) throws Exception {
-
+        
         if (args.length == 1) {
             if ("--local".equals(args[0])) {
                 LoadBalancer.LOCALHOST = true;
                 LoadBalancer.LB_PORT = 8080; 
             }
         }
+        Supervisor supervisor = Supervisor.getInstance();
+        supervisor.start();
+        
+        AutoScaler autoScaler = AutoScaler.getInstance();
+        autoScaler.start();
 
         HttpServer server = HttpServer.create(new InetSocketAddress(LB_PORT), 0);
         server.setExecutor(Executors.newCachedThreadPool());
@@ -46,11 +52,6 @@ public class LoadBalancer {
 
         System.out.println("Load Balancer started on port " + LB_PORT);
 
-        Supervisor supervisor = Supervisor.getInstance();
-        Supervisor.getInstance().start();
-
-        AutoScaler autoScaler = AutoScaler.getInstance();
-        AutoScaler.getInstance().start();
 
         server.start();
     }

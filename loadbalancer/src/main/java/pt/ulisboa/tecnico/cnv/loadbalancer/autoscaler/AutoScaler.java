@@ -1,20 +1,25 @@
 package pt.ulisboa.tecnico.cnv.loadbalancer.autoscaler;
 
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.PriorityQueue;
+import java.util.Set;
+
 import com.amazonaws.auth.EnvironmentVariableCredentialsProvider;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
-import com.amazonaws.services.ec2.model.*;
+import com.amazonaws.services.ec2.model.DescribeInstancesRequest;
+import com.amazonaws.services.ec2.model.DescribeInstancesResult;
+import com.amazonaws.services.ec2.model.Instance;
+import com.amazonaws.services.ec2.model.Reservation;
+import com.amazonaws.services.ec2.model.RunInstancesRequest;
+import com.amazonaws.services.ec2.model.RunInstancesResult;
+import com.amazonaws.services.ec2.model.Tag;
+import com.amazonaws.services.ec2.model.TerminateInstancesRequest;
 
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Supervisor;
-import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.WorkerPool;
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Worker;
-
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.util.List;
-import java.util.PriorityQueue;
-import java.util.Set;
 
 public class AutoScaler {
 

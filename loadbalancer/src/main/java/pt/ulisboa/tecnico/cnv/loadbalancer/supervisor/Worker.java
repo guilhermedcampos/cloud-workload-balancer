@@ -12,14 +12,7 @@ import com.amazonaws.services.ec2.model.Instance;
 
 public class Worker {
     // Comparators
-    // To order all workers on workpools by decreasing cpu and decreasing load
-    public static class CPUComparator implements Comparator<Worker> {
-        @Override
-        public int compare(Worker w1, Worker w2) {
-            return Double.compare(w2.getCpuUsage(), w1.getCpuUsage());
-        }
-    }
-
+    // To order all workers on workpools by decreasing load
     public static class LoadComparator implements Comparator<Worker> {
         @Override
         public int compare(Worker w1, Worker w2) {
@@ -27,19 +20,13 @@ public class Worker {
         }
     }
 
-
-    public static final int HISTORY_RANGE = 15000;
-    private static final int CPU_USAGE_HISTORY_SIZE = HISTORY_RANGE / Supervisor.HEALTH_CHECK_INTERVAL;
-
     private final String id;
     private final String ip;
 
-    private double[] cpuUsageHistory = new double[CPU_USAGE_HISTORY_SIZE];
-    private int cpuUsagePointer = 0;
     private ReadWriteLock cpuUsageLock = new ReentrantReadWriteLock();
     private double cpuUsage = 0;
 
-    private Instance instance;
+    private final Instance instance;
     private final ReadWriteLock loadRWLock = new ReentrantReadWriteLock();
     private final Set<Pair<Long, Integer>> currentLoad = new HashSet<>();
 
@@ -69,14 +56,7 @@ public class Worker {
     public void updateCpuUsage(double cpuUsage) {
         cpuUsageLock.writeLock().lock();
         try {
-            cpuUsageHistory[cpuUsagePointer] = cpuUsage;
-            cpuUsagePointer = (cpuUsagePointer + 1) % CPU_USAGE_HISTORY_SIZE;
-
-            double sum = 0;
-            for (int i=0; i<CPU_USAGE_HISTORY_SIZE; i++) {
-                sum += cpuUsageHistory[i];
-            }
-            this.cpuUsage = sum / CPU_USAGE_HISTORY_SIZE;
+            this.cpuUsage = cpuUsage;
         } finally {
             cpuUsageLock.writeLock().unlock();
         }

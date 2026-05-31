@@ -5,8 +5,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -20,20 +18,8 @@ import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Worker;
  */
 public class LoadBalancingHandler implements HttpHandler {
 
-    /** Shared round-robin counter across all handlers. */
-    private static final AtomicInteger workerIndex = new AtomicInteger(0);
-
-    /**
-     * Worker pool.
-     */
-    private static final List<String> workers = List.of(
-        "localhost",
-        "localhost"
-        // xxx.compute-1.amazonaws.com",
-        // xxx.compute-1.amazonaws.com"
-    );
-
     private final String workloadType;
+
 
     public LoadBalancingHandler(String workloadType) {
         this.workloadType = workloadType;
@@ -109,7 +95,7 @@ public class LoadBalancingHandler implements HttpHandler {
         long requestId = LoadBalancer.requestId.incrementAndGet();
         int cost = 100; // placeholder until you add real estimation
 
-        Worker worker = Supervisor.getInstance().getBestWorker(cost);
+        Worker worker = Supervisor.getInstance().getOptimalWorker(cost);
         if (worker == null) {
             throw new RuntimeException("No workers available");
         }
