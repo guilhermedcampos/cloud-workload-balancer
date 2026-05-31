@@ -5,6 +5,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -19,10 +24,55 @@ import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Worker;
 public class LoadBalancingHandler implements HttpHandler {
 
     private final String workloadType;
+    private final List<String> paramNames;
+
+    private final MetricsCache metricsCache;
 
 
-    public LoadBalancingHandler(String workloadType) {
+    public LoadBalancingHandler(String workloadType, List<String> params, List<Integer> bucketCounts) {
         this.workloadType = workloadType;
+        this.paramNames = List.copyOf(params);
+        this.metricsCache = new MetricsCache(params, bucketCounts);
+
+    }
+
+    private Map<String, Integer> getRequestParams(HttpExchange exchange) {
+        Map<String, Integer> requestParams = new HashMap<>();
+        String rawQuery = exchange.getRequestURI().getRawQuery();
+
+        if (rawQuery == null || rawQuery.isEmpty()) {
+            return requestParams;
+        }
+
+        for (String pair : rawQuery.split("&")) {
+            if (pair.isEmpty()) {
+                continue;
+            }
+
+            String[] keyValue = pair.split("=", 2);
+            String name = URLDecoder.decode(keyValue[0], StandardCharsets.UTF_8);
+            if (!paramNames.contains(name) || keyValue.length < 2) {
+                continue;
+            }
+
+            try {
+                requestParams.put(name, Integer.parseInt(URLDecoder.decode(keyValue[1], StandardCharsets.UTF_8)));
+            } catch (NumberFormatException ignored) {
+                // Skip non-integer values; MetricsCache only handles integer parameters.
+            }
+        }
+
+        if ("fractals".equals(workloadType) && paramNames.contains("resolution")) {
+            Integer width = requestParams.get("w");
+            Integer height = requestParams.get("h");
+
+            if (width != null && height != null) {
+                long resolution = (long) width * (long) height;
+                requestParams.put("resolution", Math.toIntExact(resolution));
+            }
+        }
+
+        return requestParams;
     }
 
     /**
@@ -93,7 +143,11 @@ public class LoadBalancingHandler implements HttpHandler {
     @Override
     public void handle(HttpExchange exchange) throws IOException {
         long requestId = LoadBalancer.requestId.incrementAndGet();
-        int cost = 100; // placeholder until you add real estimation
+        Integer cost = metricsCache.lookup(getRequestParams(exchange));
+
+        if (cost == null) {
+            cost = 1000; //TODO: QUERY DYNAMO ? or estimate based on params ?
+        }
 
         Worker worker = Supervisor.getInstance().getOptimalWorker(cost);
         if (worker == null) {
