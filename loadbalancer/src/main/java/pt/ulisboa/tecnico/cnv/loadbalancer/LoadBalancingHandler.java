@@ -27,48 +27,74 @@ public class LoadBalancingHandler implements HttpHandler {
     private final List<String> paramNames;
 
     private final MetricsCache metricsCache;
+    private final DynamoCost dynamoCostRepository;
 
 
     public LoadBalancingHandler(String workloadType, List<String> params, List<Integer> bucketCounts) {
         this.workloadType = workloadType;
         this.paramNames = List.copyOf(params);
         this.metricsCache = new MetricsCache(params, bucketCounts);
-
+        this.dynamoCostRepository = new DynamoCost();
     }
 
-    private Map<String, Integer> getRequestParams(HttpExchange exchange) {
-        Map<String, Integer> requestParams = new HashMap<>();
+    private Map<String, String> parseRawQuery(HttpExchange exchange) {
+        Map<String, String> rawParams = new HashMap<>();
         String rawQuery = exchange.getRequestURI().getRawQuery();
 
         if (rawQuery == null || rawQuery.isEmpty()) {
-            return requestParams;
+            return rawParams;
         }
 
         for (String pair : rawQuery.split("&")) {
             if (pair.isEmpty()) {
                 continue;
             }
-
             String[] keyValue = pair.split("=", 2);
             String name = URLDecoder.decode(keyValue[0], StandardCharsets.UTF_8);
-            if (!paramNames.contains(name) || keyValue.length < 2) {
-                continue;
-            }
+            String value = keyValue.length < 2
+                    ? ""
+                    : URLDecoder.decode(keyValue[1], StandardCharsets.UTF_8);
+            rawParams.put(name, value);
+        }
 
-            try {
-                requestParams.put(name, Integer.parseInt(URLDecoder.decode(keyValue[1], StandardCharsets.UTF_8)));
-            } catch (NumberFormatException ignored) {
-                // Skip non-integer values; MetricsCache only handles integer parameters.
+        return rawParams;
+    }
+
+    private Integer parseIntOrNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private Map<String, Integer> getRequestParams(HttpExchange exchange) {
+        Map<String, String> raw = parseRawQuery(exchange);
+        Map<String, Integer> requestParams = new HashMap<>();
+
+        for (String name : paramNames) {
+            Integer direct = parseIntOrNull(raw.get(name));
+            if (direct != null) {
+                requestParams.put(name, direct);
             }
         }
 
-        if ("fractals".equals(workloadType) && paramNames.contains("resolution")) {
-            Integer width = requestParams.get("w");
-            Integer height = requestParams.get("h");
+        if ("fractals".equals(workloadType) && paramNames.contains("resolution")
+                && !requestParams.containsKey("resolution")) {
+            Integer resolution = computeFractalsResolution(raw);
+            if (resolution != null) {
+                requestParams.put("resolution", resolution);
+            }
+        }
 
-            if (width != null && height != null) {
-                long resolution = (long) width * (long) height;
-                requestParams.put("resolution", Math.toIntExact(resolution));
+        if ("dna".equals(workloadType) && paramNames.contains("seqLength")
+                && !requestParams.containsKey("seqLength")) {
+            Integer seqLength = computeDnaSeqLength(raw);
+            if (seqLength != null) {
+                requestParams.put("seqLength", seqLength);
             }
         }
 
@@ -140,13 +166,27 @@ public class LoadBalancingHandler implements HttpHandler {
         }
     }
 
+
     @Override
     public void handle(HttpExchange exchange) throws IOException {
         long requestId = LoadBalancer.requestId.incrementAndGet();
-        Integer cost = metricsCache.lookup(getRequestParams(exchange));
+        Map<String, Integer> requestParams = getRequestParams(exchange);
+        String bucketKey = metricsCache.bucketKey(requestParams);
+
+        Integer cost = metricsCache.lookup(requestParams);
+
+        if (cost == null && bucketKey != null) {
+            cost = dynamoCostRepository.lookupCost(workloadType, bucketKey);
+            if (cost != null) {
+                metricsCache.cacheByBucketKey(bucketKey, cost);
+            }
+        }
 
         if (cost == null) {
-            cost = 1000; //TODO: QUERY DYNAMO ? or estimate based on params ?
+            // TODO cost = costEstimator.estimate(workloadType, requestParams);
+            if (bucketKey != null) {
+                metricsCache.cacheByBucketKey(bucketKey, cost);
+            }
         }
 
         Worker worker = Supervisor.getInstance().getOptimalWorker(cost);
@@ -156,55 +196,47 @@ public class LoadBalancingHandler implements HttpHandler {
         Supervisor.getInstance().registerRequestForWorker(worker, requestId, cost);
 
         long start = System.currentTimeMillis();
-
         HttpURLConnection connection = null;
 
         try {
-
             URL workerURL = buildWorkerURL(exchange, worker);
 
             System.out.println(
                     "[LB] "
-                    + exchange.getRequestMethod()
-                    + " "
-                    + exchange.getRequestURI()
-                    + " -> "
-                    + workerURL
+                            + exchange.getRequestMethod()
+                            + " "
+                            + exchange.getRequestURI()
+                            + " -> "
+                            + workerURL
+                            + " | bucket="
+                            + bucketKey
+                            + " | cost="
+                            + cost
             );
 
             connection = (HttpURLConnection) workerURL.openConnection();
-
             connection.setRequestMethod(exchange.getRequestMethod());
-
             connection.setConnectTimeout(5000);
-
-            // Workloads can take long.
             connection.setReadTimeout(300000);
 
-            // Forward request data.
             copyRequestHeaders(exchange, connection);
             connection.addRequestProperty("X-Request-Id", Long.toString(requestId));
+            connection.addRequestProperty("X-Request-Cost", Integer.toString(cost));
             forwardRequestBody(exchange, connection);
 
-            // Obtain worker response.
             int responseCode = connection.getResponseCode();
 
-            InputStream responseStream =
-                    responseCode >= 400
-                            ? connection.getErrorStream()
-                            : connection.getInputStream();
+            InputStream responseStream = responseCode >= 400
+                    ? connection.getErrorStream()
+                    : connection.getInputStream();
 
             if (responseStream == null) {
                 responseStream = InputStream.nullInputStream();
             }
 
-            // Forward response headers.
             copyResponseHeaders(connection, exchange);
 
-            // Read worker response.
             byte[] responseBody = responseStream.readAllBytes();
-
-            // Send response to client.
             exchange.sendResponseHeaders(responseCode, responseBody.length);
 
             try (OutputStream os = exchange.getResponseBody()) {
@@ -212,34 +244,61 @@ public class LoadBalancingHandler implements HttpHandler {
             }
 
             long elapsed = System.currentTimeMillis() - start;
-
-            System.out.println(
-                    "[LB] Completed "
-                    + workloadType
-                    + " in "
-                    + elapsed
-                    + " ms"
-            );
+            System.out.println("[LB] Completed " + workloadType + " in " + elapsed + " ms");
 
         } catch (Exception e) {
-
             e.printStackTrace();
-
             String message = "Load Balancer Error: " + e.getMessage();
-
             exchange.sendResponseHeaders(500, message.length());
-
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(message.getBytes());
             }
-
         } finally {
-
             if (connection != null) {
                 connection.disconnect();
             }
-
             exchange.close();
         }
+    }
+
+    private Integer computeFractalsResolution(Map<String, String> rawParams) {
+        Integer w = parseIntOrNull(rawParams.get("w"));
+        Integer h = parseIntOrNull(rawParams.get("h"));
+        if (w == null || h == null) {
+            return null;
+        }
+        long res = (long) w * (long) h;
+        if (res > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        return (int) res;
+    }
+
+    private int sequenceLength(String seqValue) {
+        if (seqValue == null) {
+            return 0;
+        }
+        int colon = seqValue.indexOf(':');
+        String sequence = colon >= 0 ? seqValue.substring(colon + 1) : seqValue;
+        return sequence.replaceAll("\\s+", "").length();
+    }
+
+    private Integer computeDnaSeqLength(Map<String, String> rawParams) {
+        Integer explicit = parseIntOrNull(rawParams.get("seqLength"));
+        if (explicit != null && explicit >= 0) {
+            return explicit;
+        }
+
+        String seq1 = rawParams.get("seq1");
+        String seq2 = rawParams.get("seq2");
+        if (seq1 == null || seq2 == null) {
+            return null;
+        }
+
+        long sum = (long) sequenceLength(seq1) + (long) sequenceLength(seq2);
+        if (sum > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        return (int) sum;
     }
 }

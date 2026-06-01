@@ -50,6 +50,10 @@ public class MetricsCache {
         return sb.toString();
     }
 
+    public String bucketKey(Map<String, Integer> params) {
+        return keyFor(params);
+    }
+
     /**
      * Lookup a cached cost for the provided parameters.
      * Returns {@code null} if there is no cached value or if required parameters are missing.
@@ -64,6 +68,11 @@ public class MetricsCache {
         String key = keyFor(params);
         if (key == null) throw new IllegalArgumentException("missing required parameter(s)");
         cache.put(key, cost);
+    }
+
+    public void cacheByBucketKey(String bucketKey, int cost) {
+        if (bucketKey == null || bucketKey.isEmpty()) { return; }
+        cache.put(bucketKey, cost);
     }
 
     public void clear() { cache.clear(); }

@@ -23,6 +23,8 @@ ssh -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEYPAR_PATH" ec2-user@$(cat lbi
 cat > /home/ec2-user/lb.env <<EOF
 LB_INSTANCE_ID=$LB_ID
 AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION
+DYNAMODB_TABLE=${DYNAMODB_TABLE:-CNV-Metrics}
+DYNAMODB_BUCKET_INDEX=${DYNAMODB_BUCKET_INDEX:-workloadBucketKey-tsEpochMs-index}
 EOF
 chmod 600 /home/ec2-user/lb.env
 "

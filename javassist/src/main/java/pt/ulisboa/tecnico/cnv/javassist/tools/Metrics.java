@@ -125,7 +125,7 @@ public class Metrics {
 
         double structural =
                 1.0
-                + 0.05 * methods
+                // + 0.05 * methods
                 + 0.05 * constructors;
 
         double fragPenalty =
@@ -175,6 +175,19 @@ public class Metrics {
             item.put("constructors", new AttributeValue().withN(Long.toString(constructors)));
             item.put("fragmentation", new AttributeValue().withN(Double.toString(fragmentation)));
             item.put("complexity", new AttributeValue().withN(Long.toString(complexity)));
+
+
+            String workload = parts.length > 1 ? parts[1] : "";
+            String paramsBlob = parts.length > 2 ? parts[2] : "";
+            Map<String, String> rawParams = parseParamsBlob(paramsBlob);
+
+            String bucketKey = buildBucketKey(workload, rawParams);
+            if (bucketKey != null) {
+                item.put("bucketKey", new AttributeValue(bucketKey));
+                item.put("workloadBucketKey", new AttributeValue(workload + "|" + bucketKey));
+            }
+            item.put("tsEpochMs", new AttributeValue().withN(Long.toString(System.currentTimeMillis())));
+
 
             boolean queued = BUFFER.offer(item);
             if (!queued) {
@@ -238,5 +251,79 @@ public class Metrics {
                 }
             }
         }
+    }
+
+    private static Integer parseIntOrNull(String v) {
+        if (v == null || v.trim().isEmpty()) return null;
+        try {
+            return Integer.parseInt(v.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static Map<String, String> parseParamsBlob(String paramsBlob) {
+        Map<String, String> map = new HashMap<>();
+        if (paramsBlob == null || paramsBlob.isEmpty()) return map;
+
+        String[] parts = paramsBlob.split(";");
+        for (String p : parts) {
+            String[] kv = p.split("=", 2);
+            if (kv.length == 2) {
+                map.put(kv[0], kv[1]);
+            }
+        }
+        return map;
+    }
+
+    private static Integer deriveResolution(Map<String, String> raw) {
+        Integer resolution = parseIntOrNull(raw.get("resolution"));
+        if (resolution != null) return resolution;
+        Integer w = parseIntOrNull(raw.get("w"));
+        Integer h = parseIntOrNull(raw.get("h"));
+        if (w == null || h == null) return null;
+        long r = (long) w * (long) h;
+        return r > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) r;
+    }
+
+    private static Integer deriveSeqLength(Map<String, String> raw) {
+        Integer seqLength = parseIntOrNull(raw.get("seqLength"));
+        if (seqLength != null) return seqLength;
+
+        Integer seq1Len = parseIntOrNull(raw.get("seq1Length"));
+        Integer seq2Len = parseIntOrNull(raw.get("seq2Length"));
+        if (seq1Len == null || seq2Len == null) return null;
+
+        long sum = (long) seq1Len + (long) seq2Len;
+        return sum > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) sum;
+    }
+
+    private static String buildBucketKey(String workload, Map<String, String> rawParams) {
+        if ("fractals".equals(workload)) {
+            Integer iterations = parseIntOrNull(rawParams.get("iterations"));
+            Integer resolution = deriveResolution(rawParams);
+            if (iterations == null || resolution == null) return null;
+            int bIterations = Math.floorDiv(iterations, 10) * 10;
+            int bResolution = Math.floorDiv(resolution, 10) * 10;
+            return "iterations=" + bIterations + "|resolution=" + bResolution;
+        }
+
+        if ("dna".equals(workload)) {
+            Integer seqLength = deriveSeqLength(rawParams);
+            if (seqLength == null) return null;
+            int bSeq = Math.floorDiv(seqLength, 10) * 10;
+            return "seqLength=" + bSeq;
+        }
+
+        if ("grayscott".equals(workload)) {
+            Integer size = parseIntOrNull(rawParams.get("size"));
+            Integer maxIterations = parseIntOrNull(rawParams.get("maxIterations"));
+            if (size == null || maxIterations == null) return null;
+            int bSize = Math.floorDiv(size, 10) * 10;
+            int bIter = Math.floorDiv(maxIterations, 10) * 10;
+            return "size=" + bSize + "|maxIterations=" + bIter;
+        }
+
+        return null;
     }
 }
