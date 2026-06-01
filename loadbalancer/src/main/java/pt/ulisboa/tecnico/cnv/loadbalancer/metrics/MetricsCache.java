@@ -1,4 +1,4 @@
-package pt.ulisboa.tecnico.cnv.loadbalancer;
+package pt.ulisboa.tecnico.cnv.loadbalancer.metrics;
 
 import java.util.ArrayList;
 import java.util.Collections;

@@ -14,6 +14,8 @@ import java.util.Map;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 
+import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.DynamoCost;
+import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.MetricsCache;
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Supervisor;
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Worker;
 
