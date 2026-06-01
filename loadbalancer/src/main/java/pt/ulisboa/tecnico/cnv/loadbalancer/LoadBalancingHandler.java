@@ -14,6 +14,7 @@ import java.util.Map;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 
+import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.CostEstimator;
 import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.DynamoCost;
 import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.MetricsCache;
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Supervisor;
@@ -30,13 +31,15 @@ public class LoadBalancingHandler implements HttpHandler {
 
     private final MetricsCache metricsCache;
     private final DynamoCost dynamoCostRepository;
+    private final CostEstimator costEstimator;
 
 
-    public LoadBalancingHandler(String workloadType, List<String> params, List<Integer> bucketCounts) {
+    public LoadBalancingHandler(String workloadType, List<String> params, List<Integer> bucketCounts, List<Integer> costs) {
         this.workloadType = workloadType;
         this.paramNames = List.copyOf(params);
         this.metricsCache = new MetricsCache(params, bucketCounts);
         this.dynamoCostRepository = new DynamoCost();
+        this.costEstimator = new CostEstimator(params, costs);
     }
 
     private Map<String, String> parseRawQuery(HttpExchange exchange) {
@@ -185,10 +188,7 @@ public class LoadBalancingHandler implements HttpHandler {
         }
 
         if (cost == null) {
-            // TODO cost = costEstimator.estimate(workloadType, requestParams);
-            if (bucketKey != null) {
-                metricsCache.cacheByBucketKey(bucketKey, cost);
-            }
+            cost = costEstimator.estimate(requestParams);
         }
 
         Worker worker = Supervisor.getInstance().getOptimalWorker(cost);
