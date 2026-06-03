@@ -107,6 +107,15 @@ public class FractalsHandler implements HttpHandler, RequestHandler<Map<String, 
             OutputStream os = he.getResponseBody();
             os.write(errorResponse.getBytes());
             os.close();
+        } catch (Throwable e) {
+            e.printStackTrace();
+            String errorResponse = "{ \"error\":\"Internal server error: " + e.getMessage() + "\"}";
+            he.sendResponseHeaders(500, errorResponse.length());
+            OutputStream os = he.getResponseBody();
+            os.write(errorResponse.getBytes());
+            os.close();
+        } finally {
+            he.close();
         }
     }
 

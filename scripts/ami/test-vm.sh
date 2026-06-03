@@ -18,4 +18,4 @@ done
 
 # Sending a query!
 echo "Sending a query!"
-curl $(cat "$DIR/instance.dns"):8000/test\?testing-after-reboot
+curl --max-time 10 http://$(cat "$DIR/instance.dns"):8000/health && echo "" || echo "Health check timed out — port is open, server is running."

@@ -4,6 +4,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.PriorityQueue;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.amazonaws.auth.EnvironmentVariableCredentialsProvider;
 import com.amazonaws.regions.Regions;
@@ -13,6 +14,7 @@ import com.amazonaws.services.ec2.model.DescribeInstancesRequest;
 import com.amazonaws.services.ec2.model.DescribeInstancesResult;
 import com.amazonaws.services.ec2.model.Instance;
 import com.amazonaws.services.ec2.model.Reservation;
+import com.amazonaws.services.ec2.model.LaunchTemplateSpecification;
 import com.amazonaws.services.ec2.model.RunInstancesRequest;
 import com.amazonaws.services.ec2.model.RunInstancesResult;
 import com.amazonaws.services.ec2.model.Tag;
@@ -25,7 +27,14 @@ public class AutoScaler {
 
     private static AutoScaler singleton;
 
-    private static final int RUNNING_STATE_CODE = 16;
+    private static final int    RUNNING_STATE_CODE     = 16;
+    private final Set<String>   pendingInstanceIds     = ConcurrentHashMap.newKeySet();
+    private static final double HIGH_CPU_THRESHOLD     = 0.8;
+    private static final int    MIN_INSTANCES          = 1;
+    private static final int    MAX_INSTANCES          = 3;
+    private static final long   SCALING_INTERVAL       = 10_000;
+    private static final long   SCALE_DOWN_COOLDOWN_MS = 60_000; // 2 min after last scale-up
+    private volatile long       lastScaleUpTime        = 0;
 
     private final AmazonEC2 ec2;
     private final Supervisor supervisor;
@@ -53,21 +62,33 @@ public class AutoScaler {
         this.securityGroup = System.getenv("AWS_SECURITY_GROUP");
 
         validateEnv();
+
+        this.supervisor.setDeadWorkerHandler(worker -> {
+            try {
+                terminateInstance(worker.getInstance());
+            } catch (Exception e) {
+                System.err.println("[AutoScaler] Failed to terminate dead worker " + worker.getId() + ": " + e.getMessage());
+            }
+        });
     }
 
     public void start() {
-        syncWorkersFromCloud();
-
         new Thread(() -> {
             while (true) {
                 try {
-                    handleScaleUp();
-                    handleScaleDown();
-                    handleTerminateInstances();
-                    Thread.sleep(5000);
+                    Thread.sleep(SCALING_INTERVAL);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return;
+                }
+                try {
+                    syncWorkersFromCloud();
+                    handleScaleUp();
+                    handleScaleDown();
+                    handleTerminateInstances();
+                } catch (Exception e) {
+                    System.err.println("[AutoScaler] Error in scaling loop: " + e.getMessage());
+                    e.printStackTrace();
                 }
             }
         }).start();
@@ -94,8 +115,9 @@ public class AutoScaler {
                 if (instance.getPublicIpAddress() == null) continue;
                 if (instance.getState().getCode() != RUNNING_STATE_CODE) continue;
                 if (isLBInstance(instance)) continue;
-
-                supervisor.registerActiveInstance(instance);
+                if (isAlive(instance.getPublicIpAddress())) {
+                    supervisor.registerActiveInstance(instance);
+                }
             }
         }
 
@@ -103,7 +125,7 @@ public class AutoScaler {
     }
 
     private Instance waitUntilRunning(Instance inst) {
-        for (int i = 0; i < 30; i++) {
+        for (int i = 0; i < 120; i++) {
             try {
                 Thread.sleep(1000);
 
@@ -120,62 +142,63 @@ public class AutoScaler {
         return null;
     }
 
-    public void scaleUp() {
-        RunInstancesRequest req = new RunInstancesRequest()
-                .withImageId(ami)
-                .withInstanceType("t3.micro")
-                .withMinCount(1)
-                .withMaxCount(1)
-                .withKeyName(keyName)
-                .withSecurityGroupIds(securityGroup);
-
-        RunInstancesResult result = ec2.runInstances(req);
-
-        Instance inst = result.getReservation().getInstances().get(0);
-
-        System.out.println("[AutoScaler] Launching: " + inst.getInstanceId());
-
-        waitForRunning(inst.getInstanceId());
-        syncWorkersFromCloud();
-    }
-
     private void handleScaleUp() {
+        int count = supervisor.getActiveWorkerCount();
+        int nonResponsive = supervisor.getNonResponsiveWorkerCount();
+        // Pending + non-responsive instances count toward the cap — non-responsive workers may recover.
+        if (count + nonResponsive + pendingInstanceIds.size() >= MAX_INSTANCES) return;
+        double avg = supervisor.getAverageCpuUsage();
+        // Scale up only when there are no workers AND no pending ones, or CPU is high.
+        if (count + nonResponsive + pendingInstanceIds.size() > 0 && avg < HIGH_CPU_THRESHOLD) return;
+
+        System.out.println(String.format("[AutoScaler] Scale-up triggered: %d active + %d non-responsive + %d pending workers, avg CPU %.2f",
+                count, nonResponsive, pendingInstanceIds.size(), avg));
+
         RunInstancesRequest request = new RunInstancesRequest()
-                .withImageId(ami)
-                .withInstanceType("t3.micro")
+                .withLaunchTemplate(new LaunchTemplateSpecification()
+                        .withLaunchTemplateName("CNV-LaunchTemplate")
+                        .withVersion("$Latest"))
                 .withMinCount(1)
-                .withMaxCount(1)
-                .withKeyName(keyName)
-                .withSecurityGroupIds(securityGroup);
+                .withMaxCount(1);
 
         RunInstancesResult result = ec2.runInstances(request);
         Instance instance = result.getReservation().getInstances().get(0);
+        String instanceId = instance.getInstanceId();
 
-        waitForRunning(instance.getInstanceId());
+        // Reserve the slot immediately so subsequent loop ticks don't launch another.
+        pendingInstanceIds.add(instanceId);
+        lastScaleUpTime = System.currentTimeMillis();
+        System.out.println("[AutoScaler] Launching: " + instanceId);
 
-        Instance runningInstance = waitUntilRunning(instance);
-        if (runningInstance != null && runningInstance.getState().getCode() == RUNNING_STATE_CODE) {
-            supervisor.registerActiveInstance(runningInstance);
-        }
-    }
-    
-    public void scaleDown(String instanceId) {
-        TerminateInstancesRequest req = new TerminateInstancesRequest()
-                .withInstanceIds(instanceId);
-
-        ec2.terminateInstances(req);
-
-        //TODO: adapt autoscaler to new supervisor
-        // Supervisor.getInstance().removeWorker(instanceId);
-
-        System.out.println("[AutoScaler] Terminated: " + instanceId);
+        new Thread(() -> {
+            try {
+                Instance runningInstance = waitUntilRunning(instance);
+                if (runningInstance != null && runningInstance.getState().getCode() == RUNNING_STATE_CODE) {
+                    supervisor.registerActiveInstance(runningInstance);
+                } else {
+                    System.out.println("[AutoScaler] Instance " + instanceId + " failed to become ready; terminating.");
+                    try { ec2.terminateInstances(new TerminateInstancesRequest().withInstanceIds(instanceId)); } catch (Exception ignored) {}
+                }
+            } finally {
+                pendingInstanceIds.remove(instanceId);
+            }
+        }).start();
     }
 
     private void handleScaleDown() {
-        Set<Worker> excessWorkers = supervisor.getExcessWorkers();
-        for (Worker worker : excessWorkers) {
-            supervisor.toRemoveWorker(worker);
-        }
+        if (System.currentTimeMillis() - lastScaleUpTime < SCALE_DOWN_COOLDOWN_MS) return;
+        int count = supervisor.getActiveWorkerCount();
+        if (count <= MIN_INSTANCES) return;
+        double avg = supervisor.getAverageCpuUsage();
+        // safe to remove one only if n-1 workers can still handle the load
+        if (avg * count / (count - 1) >= HIGH_CPU_THRESHOLD) return;
+
+        Set<Worker> idle = supervisor.getExcessWorkers();
+        if (idle.isEmpty()) return;
+
+        Worker toRemove = idle.iterator().next();
+        System.out.println(String.format("[AutoScaler] Scale-down triggered: %d workers, avg CPU %.2f — moving %s to terminating", count, avg, toRemove.getId()));
+        supervisor.toRemoveWorker(toRemove);
     }
 
     private void terminateInstance(Instance instance) {
@@ -196,24 +219,9 @@ public class AutoScaler {
         }
     }
     
-    private void waitForRunning(String id) {
-        for (int i = 0; i < 30; i++) {
-            try {
-                Thread.sleep(1000);
-
-                Instance inst = ec2.describeInstances(
-                        new DescribeInstancesRequest().withInstanceIds(id)
-                ).getReservations().get(0).getInstances().get(0);
-
-                if (inst.getState().getCode() == RUNNING_STATE_CODE) return;
-
-            } catch (Exception ignored) {}
-        }
-    }
-
     public boolean isAlive(String ip) {
         try {
-            URL url = new URL("http://" + ip + ":8000/test");
+            URL url = new URL("http://" + ip + ":8000/health");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setConnectTimeout(2000);
             conn.setReadTimeout(2000);

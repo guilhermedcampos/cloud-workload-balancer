@@ -29,5 +29,6 @@ public class RootHandler implements HttpHandler {
         System.out.println(query);
 
         he.sendResponseHeaders(200, 0);
+        he.close();
     }
 }

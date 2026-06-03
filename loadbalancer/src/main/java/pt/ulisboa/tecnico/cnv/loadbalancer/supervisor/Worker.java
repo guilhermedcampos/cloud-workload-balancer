@@ -2,6 +2,7 @@ package pt.ulisboa.tecnico.cnv.loadbalancer.supervisor;
 
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -16,7 +17,9 @@ public class Worker {
     public static class LoadComparator implements Comparator<Worker> {
         @Override
         public int compare(Worker w1, Worker w2) {
-            return Double.compare(w2.getLoad(), w1.getLoad());
+            int cmp = Double.compare(w2.getLoad(), w1.getLoad());
+            if (cmp != 0) return cmp;
+            return w1.getId().compareTo(w2.getId()); // tie-break so equal-load workers aren't deduplicated
         }
     }
 
@@ -75,6 +78,15 @@ public class Worker {
         }
     }
 
+    public void removeLoad(long requestId) {
+        loadRWLock.writeLock().lock();
+        try {
+            currentLoad.removeIf(p -> p.getLeft() == requestId);
+        } finally {
+            loadRWLock.writeLock().unlock();
+        }
+    }
+
     public int getLoad() {
         loadRWLock.readLock().lock();
         try {
@@ -91,5 +103,10 @@ public class Worker {
         }
         Worker other = (Worker) obj;
         return this.getId().equals(other.getId()) && this.getIp().equals(other.getIp());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(id, ip);
     }
 }

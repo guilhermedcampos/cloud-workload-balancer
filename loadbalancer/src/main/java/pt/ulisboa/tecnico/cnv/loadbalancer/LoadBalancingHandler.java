@@ -192,15 +192,18 @@ public class LoadBalancingHandler implements HttpHandler {
         }
 
         Worker worker = Supervisor.getInstance().getOptimalWorker(cost);
-        if (worker == null) {
-            throw new RuntimeException("No workers available");
-        }
-        Supervisor.getInstance().registerRequestForWorker(worker, requestId, cost);
-
-        long start = System.currentTimeMillis();
         HttpURLConnection connection = null;
 
         try {
+            if (worker == null) {
+                String msg = "503 No workers available";
+                exchange.sendResponseHeaders(503, msg.length());
+                try (OutputStream os = exchange.getResponseBody()) { os.write(msg.getBytes()); }
+                return;
+            }
+            Supervisor.getInstance().registerRequestForWorker(worker, requestId, cost);
+
+            long start = System.currentTimeMillis();
             URL workerURL = buildWorkerURL(exchange, worker);
 
             System.out.println(
@@ -256,9 +259,10 @@ public class LoadBalancingHandler implements HttpHandler {
                 os.write(message.getBytes());
             }
         } finally {
-            if (connection != null) {
-                connection.disconnect();
+            if (worker != null) {
+                Supervisor.getInstance().completeRequestForWorker(worker, requestId);
             }
+            if (connection != null) connection.disconnect();
             exchange.close();
         }
     }

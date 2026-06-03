@@ -1,10 +1,18 @@
 #!/bin/bash
 
-source config.sh
+source "$(dirname "$(realpath "$0")")/../config.sh"
+
+# Ensure port 8080 is open for the LB (idempotent — silently ignores duplicate rules).
+echo "Ensuring port 8080 is open on security group $AWS_SECURITY_GROUP..."
+aws ec2 authorize-security-group-ingress \
+    --group-id "$AWS_SECURITY_GROUP" \
+    --protocol tcp \
+    --port 8080 \
+    --cidr 0.0.0.0/0 2>&1 | grep -v "InvalidPermission.Duplicate" || true
 
 aws ec2 run-instances \
-    --image-id resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2 \
-    --instance-type t2.micro \
+    --image-id resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 \
+    --instance-type t3.micro \
     --key-name "$AWS_KEYPAIR_NAME" \
     --security-group-ids "$AWS_SECURITY_GROUP" \
     --monitoring Enabled=true | jq -r ".Instances[0].InstanceId" > lbinstance.id

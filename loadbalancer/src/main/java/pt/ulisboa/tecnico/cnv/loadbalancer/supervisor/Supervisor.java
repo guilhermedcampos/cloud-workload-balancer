@@ -7,16 +7,16 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.*;
-import java.util.stream.Collectors;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 import pt.ulisboa.tecnico.cnv.loadbalancer.LoadBalancer;
-import pt.ulisboa.tecnico.cnv.loadbalancer.autoscaler.AutoScaler;
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.WorkerPool.WorkerPoolType;
 
 public class Supervisor {
     private static Supervisor instance = null;
     static final int HEALTH_CHECK_INTERVAL = 5000;
-    private static final int STARTUP = 30;
+    private static final int STARTUP = 180;
     private static final int SECOND_TILL_DEATH = 30;
     private static final int WORKER_PORT = LoadBalancer.WORKER_PORT;
 
@@ -30,7 +30,15 @@ public class Supervisor {
         put(WorkerPoolType.NON_RESPONSIVE, nonResponsivePool);
     }};
 
-    private final Map<Worker, WorkerPool> workers = new HashMap<>();
+    private final Map<Worker, WorkerPool> workers = new ConcurrentHashMap<>();
+    private final Set<String> registrationGate = ConcurrentHashMap.newKeySet();
+    private final Set<Worker> recoveringWorkers = ConcurrentHashMap.newKeySet();
+    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private Consumer<Worker> deadWorkerHandler = w -> {};
+
+    public void setDeadWorkerHandler(Consumer<Worker> handler) {
+        this.deadWorkerHandler = handler;
+    }
 
     private Supervisor() {
     }
@@ -57,8 +65,7 @@ public class Supervisor {
     }
 
     private HttpResponse<String> healthCheck(String ipAddress, Duration timeout) {
-        HttpClient client = HttpClient.newHttpClient();
-        String url = "http://" + ipAddress + ":" + WORKER_PORT + "/test";
+        String url = "http://" + ipAddress + ":" + WORKER_PORT + "/health";
         HttpRequest request = HttpRequest.newBuilder().timeout(timeout)
             .uri(URI.create(url))
             .GET()
@@ -66,7 +73,7 @@ public class Supervisor {
 
         HttpResponse<String> response;
         try {
-            response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         } catch (IOException | InterruptedException e) {
             return null;
         }
@@ -76,10 +83,11 @@ public class Supervisor {
     }
 
     private void handleHealthCheck() {
-        if (this.workers.isEmpty()) {
+        List<Worker> snapshot = new ArrayList<>(this.workers.keySet());
+        if (snapshot.isEmpty()) {
             return;
         }
-         for (Worker worker : this.workers.keySet()) {
+        for (Worker worker : snapshot) {
             new Thread(() -> {
                 HttpResponse<String> response = healthCheck(worker.getIp(), Duration.ofSeconds(2));
                 
@@ -90,9 +98,6 @@ public class Supervisor {
                 }
 
                 if (response.statusCode() / 100 != 2) {
-                    //TODO: unhandled case: the supervisor assumes that in this case the instance is dead
-                    //and removes it from every list. Possible problem: incorrect instances are kept alive
-                    // doing nothing instead of being killed.
                     System.out.println(String.format("[Supervisor] [%s] Worker is not responding to health check. Removing it.", worker.getIp()));
                     unresponsiveWorker(worker);
                 } else {
@@ -107,49 +112,62 @@ public class Supervisor {
                     worker.updateCpuUsage(cpuUsage);
                     System.out.println(String.format("[Supervisor] [%s] OK | CPU Usage: %f", worker.getIp(), cpuUsage));
                 }
-                
+
             }).start();
         }
 
-    }    
+    }
 
     public void registerRequestForWorker(Worker worker, long requestId, int cost) {
         WorkerPool pool = this.workers.get(worker);
         if (pool == null) {
-            throw new RuntimeException("Worker not found in any pool");
+            // Worker was concurrently removed (died between selection and registration).
+            // Skip load tracking and let the request proceed — it will fail at network level if the VM is gone.
+            System.out.println(String.format("[Supervisor] Worker %s removed before request registration; skipping load tracking.", worker.getIp()));
+            return;
         }
-
         worker.updateLoad(requestId, cost);
+    }
+
+    public void completeRequestForWorker(Worker worker, long requestId) {
+        worker.removeLoad(requestId);
     }
     
     private void unresponsiveWorker(Worker worker) {
-        // Send worker to non responsive pool
-        this.activeWorkersPool.sendWorkerToPool(worker, this.nonResponsivePool);
+        if (!this.workers.containsKey(worker)) return;
+        // Only one thread handles recovery per worker. gate prevents duplicate handling.
+        // finally always releases so the next health-check tick can retry if this thread crashes.
+        if (!recoveringWorkers.add(worker)) return;
 
-        // move back in or terminate
-        boolean isAlive = false;
-        boolean removed = false;
-        for (int i = 0; i < SECOND_TILL_DEATH; i++) {
-            if (i > SECOND_TILL_DEATH / 10 && !removed) {
-                // allow autoscaling to replace the instance
-                this.workers.remove(worker);
-                removed = true;
+        try {
+            this.activeWorkersPool.sendWorkerToPool(worker, this.nonResponsivePool);
+
+            boolean isAlive = false;
+            for (int i = 0; i < SECOND_TILL_DEATH; i++) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                HttpResponse<String> response = healthCheck(worker.getIp(), Duration.ofSeconds(5));
+                if (response != null && response.statusCode() == 200) {
+                    isAlive = true;
+                    break;
+                }
             }
-            HttpResponse<String> response = healthCheck(worker.getIp(), Duration.ofSeconds(5));
-            if (response != null && response.statusCode() == 200) {
-                isAlive = true;
-                break;
+
+            if (isAlive) {
+                this.nonResponsivePool.sendWorkerToPool(worker, this.activeWorkersPool);
+                this.workers.put(worker, this.activeWorkersPool);
+            } else {
+                System.out.println(String.format("[Supervisor] [%s] Worker confirmed dead. Removing and scheduling termination.", worker.getIp()));
+                removeInactiveWorker(worker);
+                deadWorkerHandler.accept(worker);
             }
+        } finally {
+            recoveringWorkers.remove(worker);
         }
-        if (isAlive) {
-            this.nonResponsivePool.sendWorkerToPool(worker, this.activeWorkersPool);
-            this.workers.put(worker, this.activeWorkersPool);
-
-        } else {
-            // AutoScaler.getInstance().terminateInstance(worker.getInstance());
-            removeInactiveWorker(worker);
-        }
-
     }
 
     public Worker getOptimalWorker(int cost) {
@@ -171,39 +189,37 @@ public class Supervisor {
     }
 
     public void removeInactiveWorker(Worker worker) {
-        WorkerPool pool = this.workers.get(worker);
-        if (pool == null) {
-            throw new RuntimeException("Worker not found in any pool");
+        WorkerPool pool = this.workers.remove(worker);
+        if (pool != null) {
+            pool.removeWorker(worker);
         }
-
-        pool.removeWorker(worker);
-        this.workers.remove(worker);
     }
 
     public Set<Worker> getExcessWorkers() {
-        WorkerPool workingPool = this.pools.get(WorkerPoolType.WORKING);
-        Set<Worker> candidates = new HashSet<>();
-
-        if (workingPool.size() <= 1) {
-            return candidates;
+        Set<Worker> idle = new HashSet<>();
+        for (Worker w : activeWorkersPool.getWorkers()) {
+            if (w.getLoad() == 0) idle.add(w);
         }
-
-        for (Worker worker : workingPool.getWorkers()) {
-            if (worker.getLoad() == 0) { // TODO check
-                candidates.add(worker);
-            }
+        if (idle.size() == activeWorkersPool.size() && !idle.isEmpty()) {
+            idle.remove(idle.iterator().next());
         }
-
-        if (candidates.size() == workingPool.size()) {
-            Iterator<Worker> iterator = candidates.iterator();
-            if (iterator.hasNext()) {
-                iterator.next();
-                iterator.remove();
-            }
-        }
-
-        return candidates;
+        return idle;
     }
+
+    public double getAverageCpuUsage() {
+        Set<Worker> all = activeWorkersPool.getWorkers();
+        if (all.isEmpty()) return 0.0;
+        return all.stream().mapToDouble(Worker::getCpuUsage).average().orElse(0.0);
+    }
+
+    public int getActiveWorkerCount() {
+        return activeWorkersPool.size();
+    }
+
+    public int getNonResponsiveWorkerCount() {
+        return nonResponsivePool.size();
+    }
+
     
     public void toRemoveWorker(Worker worker) {
         WorkerPool pool = this.workers.get(worker);
@@ -249,11 +265,12 @@ public class Supervisor {
             return false;
         }
 
-        Worker worker = new Worker(inst);
-
-        if (this.workers.containsKey(worker)) {
+        // Atomically claim this instance ID — only one thread proceeds, all others skip.
+        if (!registrationGate.add(inst.getInstanceId())) {
             return false;
         }
+
+        Worker worker = new Worker(inst);
 
         for (int i = 0; i < STARTUP; i++) {
             HttpResponse<String> response = healthCheck(
@@ -285,6 +302,8 @@ public class Supervisor {
             }
         }
 
+        // Failed to register — release the gate so a future sync can retry.
+        registrationGate.remove(inst.getInstanceId());
         return false;
     }
 }

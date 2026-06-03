@@ -11,11 +11,12 @@ import com.sun.net.httpserver.HttpHandler;
 public class HealthHandler implements HttpHandler{
     @Override
     public void handle(HttpExchange he) throws IOException {
-        double cpuLoad = ManagementFactory.getPlatformMXBean(OperatingSystemMXBean.class).getCpuLoad();
-
-        he.sendResponseHeaders(200, 0);
-        OutputStream os = he.getResponseBody();
-        os.write(("OK: " + String.format("%.3f", cpuLoad)).getBytes());
-        os.close();
+        double cpuLoad = ManagementFactory.getPlatformMXBean(OperatingSystemMXBean.class).getSystemCpuLoad();
+        byte[] body = ("OK: " + String.format("%.3f", cpuLoad)).getBytes();
+        he.sendResponseHeaders(200, body.length);
+        try (OutputStream os = he.getResponseBody()) {
+            os.write(body);
+        }
+        he.close();
     }
 }

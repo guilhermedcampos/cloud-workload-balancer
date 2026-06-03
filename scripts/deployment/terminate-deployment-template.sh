@@ -2,33 +2,28 @@
 
 source "$(dirname "$(realpath "$0")")/../config.sh"
 
-# Step 1: delete CloudWatch alarms.
+# Step 1: delete CloudWatch alarms (no-op if already gone).
 aws cloudwatch delete-alarms \
-	--alarm-names CNV-HighCPU CNV-LowCPU
+	--alarm-names CNV-HighCPU CNV-LowCPU 2>/dev/null || true
 
-# Step 2: scale down and delete Auto Scaling group.
+# Step 2: scale down and delete Auto Scaling group (no-op if already gone).
 aws autoscaling update-auto-scaling-group \
 	--auto-scaling-group-name CNV-AutoScalingGroup \
 	--min-size 0 \
 	--max-size 0 \
-	--desired-capacity 0
+	--desired-capacity 0 2>/dev/null || true
 
-sleep 60
+sleep 30
 
 aws autoscaling delete-auto-scaling-group \
 	--auto-scaling-group-name CNV-AutoScalingGroup \
-	--force-delete
+	--force-delete 2>/dev/null || true
 
 # Step 3: delete Launch Template.
 aws ec2 delete-launch-template \
-	--launch-template-name CNV-LaunchTemplate
+	--launch-template-name CNV-LaunchTemplate 2>/dev/null || true
 
-# Step 4: delete Load Balancer.
-aws elb delete-load-balancer \
-	--load-balancer-name CNV-LoadBalancer
-
-# Step 5: delete DynamoDB metrics table.
+# Step 4: delete DynamoDB metrics table.
 aws dynamodb delete-table --table-name CNV-Metrics 2>/dev/null && \
     echo "DynamoDB table CNV-Metrics deleted." || \
     echo "DynamoDB table CNV-Metrics not found, skipping."
-
