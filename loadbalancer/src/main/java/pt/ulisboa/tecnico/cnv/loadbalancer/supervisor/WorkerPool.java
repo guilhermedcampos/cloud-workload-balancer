@@ -50,6 +50,14 @@ public class WorkerPool {
         }
     }
 
+    public void reinsert(Worker worker) {
+        synchronized (lock) {
+            if (sortedByHighLoad.remove(worker)) {
+                sortedByHighLoad.add(worker);
+            }
+        }
+    }
+    
     public boolean containsWorker(Worker worker) {
         synchronized (lock) {
             return sortedByHighLoad.contains(worker);

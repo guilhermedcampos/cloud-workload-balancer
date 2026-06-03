@@ -127,10 +127,12 @@ public class Supervisor {
             return;
         }
         worker.updateLoad(requestId, cost);
+        this.refreshWorkerPosition(worker);
     }
 
     public void completeRequestForWorker(Worker worker, long requestId) {
         worker.removeLoad(requestId);
+        this.refreshWorkerPosition(worker);
     }
     
     private void unresponsiveWorker(Worker worker) {
@@ -231,6 +233,13 @@ public class Supervisor {
         this.workers.put(worker, this.terminatingPool);
     }
 
+    public void refreshWorkerPosition(Worker worker) {
+        WorkerPool pool = this.workers.get(worker);
+        if (pool == null) return;
+
+        pool.reinsert(worker);
+    }
+    
     public PriorityQueue<Worker> getFreeWorkers() {
         PriorityQueue<Worker> queue = new PriorityQueue<>();
         for (Worker worker : this.workers.keySet()) {
