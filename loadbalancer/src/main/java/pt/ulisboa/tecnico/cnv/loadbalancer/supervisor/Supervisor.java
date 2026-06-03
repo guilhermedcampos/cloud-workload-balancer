@@ -172,6 +172,12 @@ public class Supervisor {
         }
     }
 
+    public boolean hasOnlyHighLoadActiveWorkers(double cpuThreshold) {
+        Set<Worker> active = activeWorkersPool.getWorkers();
+        return !active.isEmpty()
+                && active.stream().allMatch(worker -> worker.getCpuUsage() >= cpuThreshold);
+    }
+    
     public Worker getOptimalWorker(int cost) {
         WorkerPool pool = this.pools.get(WorkerPoolType.WORKING);
         Worker worker = pool.getAvailableWorker(cost);

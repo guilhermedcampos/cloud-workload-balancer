@@ -14,6 +14,12 @@ import java.util.Map;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 
+import com.amazonaws.services.lambda.AWSLambda;
+import com.amazonaws.services.lambda.AWSLambdaClient;
+import com.amazonaws.services.lambda.model.InvokeRequest;
+import com.amazonaws.services.lambda.model.InvokeResult;
+import com.amazonaws.auth.EnvironmentVariableCredentialsProvider;
+
 import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.CostEstimator;
 import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.DynamoCost;
 import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.MetricsCache;
@@ -33,6 +39,12 @@ public class LoadBalancingHandler implements HttpHandler {
     private final DynamoCost dynamoCostRepository;
     private final CostEstimator costEstimator;
 
+    private static final double HIGH_LOAD_CPU_THRESHOLD = 0.8;
+    private static final int LAMBDA_MAX_COST = 50_000;
+    private static final int EC2_PREFER_THRESHOLD = 20_000; // send lambda if cost is below this threshold and only high-load workers are available
+
+    private final AWSLambda lambdaClient;
+
 
     public LoadBalancingHandler(String workloadType, List<String> params, List<Integer> bucketCounts, List<Integer> costs) {
         this.workloadType = workloadType;
@@ -40,6 +52,9 @@ public class LoadBalancingHandler implements HttpHandler {
         this.metricsCache = new MetricsCache(params, bucketCounts);
         this.dynamoCostRepository = new DynamoCost();
         this.costEstimator = new CostEstimator(params, costs);
+        this.lambdaClient = AWSLambdaClient.builder()
+            .withCredentials(new EnvironmentVariableCredentialsProvider())
+            .build();
     }
 
     private Map<String, String> parseRawQuery(HttpExchange exchange) {
@@ -191,19 +206,33 @@ public class LoadBalancingHandler implements HttpHandler {
             cost = costEstimator.estimate(requestParams);
         }
 
-        Worker worker = Supervisor.getInstance().getOptimalWorker(cost);
-        HttpURLConnection connection = null;
+        Supervisor supervisor = Supervisor.getInstance();
 
-        try {
-            if (worker == null) {
-                String msg = "503 No workers available";
-                exchange.sendResponseHeaders(503, msg.length());
-                try (OutputStream os = exchange.getResponseBody()) { os.write(msg.getBytes()); }
+        if (cost <= EC2_PREFER_THRESHOLD
+                && supervisor.hasOnlyHighLoadActiveWorkers(HIGH_LOAD_CPU_THRESHOLD)) {
+            invokeLambda(exchange, cost);
+            return;
+        }
+
+        Worker worker = supervisor.getOptimalWorker(cost);
+
+        if (worker == null) {
+            if (cost <= LAMBDA_MAX_COST) {
+                invokeLambda(exchange, cost);
                 return;
             }
-            Supervisor.getInstance().registerRequestForWorker(worker, requestId, cost);
+            String msg = "503 No workers available";
+            exchange.sendResponseHeaders(503, msg.length());
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(msg.getBytes(StandardCharsets.UTF_8));
+            }
+            return;
+        }
 
-            long start = System.currentTimeMillis();
+        supervisor.registerRequestForWorker(worker, requestId, cost);
+        long start = System.currentTimeMillis();
+        HttpURLConnection connection = null;
+        try {
             URL workerURL = buildWorkerURL(exchange, worker);
 
             System.out.println(
@@ -259,14 +288,44 @@ public class LoadBalancingHandler implements HttpHandler {
                 os.write(message.getBytes());
             }
         } finally {
-            if (worker != null) {
-                Supervisor.getInstance().completeRequestForWorker(worker, requestId);
+            supervisor.completeRequestForWorker(worker, requestId);
+            if (connection != null) {
+                connection.disconnect();
             }
-            if (connection != null) connection.disconnect();
             exchange.close();
         }
     }
 
+    private void invokeLambda(HttpExchange exchange, int cost) throws IOException {
+
+        String query = exchange.getRequestURI().getRawQuery();
+
+        String payload = "{"
+                + "\"workload\":\"" + workloadType + "\","
+                + "\"params\":\"" + (query == null ? "" : query.replace("\"", "\\\"")) + "\","
+                + "\"cost\":" + cost
+                + "}";
+
+        InvokeRequest request = new InvokeRequest()
+                .withFunctionName(System.getenv("LAMBDA_FUNCTION_NAME"))
+                .withPayload(payload);
+
+        InvokeResult response = lambdaClient.invoke(request);
+
+        String resultString = new String(response.getPayload().array(), java.nio.charset.StandardCharsets.UTF_8);
+
+        byte[] resultBytes = resultString.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        try {
+            exchange.sendResponseHeaders(200, resultBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resultBytes);
+            }
+        } finally {
+            exchange.close();
+        }
+    }
+    
     private Integer computeFractalsResolution(Map<String, String> rawParams) {
         Integer w = parseIntOrNull(rawParams.get("w"));
         Integer h = parseIntOrNull(rawParams.get("h"));
