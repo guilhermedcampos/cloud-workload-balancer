@@ -1,6 +1,7 @@
 package pt.ulisboa.tecnico.cnv.loadbalancer.metrics;
 
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class CacheRefresher {
@@ -40,20 +41,19 @@ public class CacheRefresher {
 
     private void refreshWorkload(String workload, MetricsCache cache) {
         long now = System.currentTimeMillis();
-        Set<String> keys = cache.snapshotKeys();
 
-        for (String bucketKey : keys) {
-            String seenKey = workload + "|" + bucketKey;
-            Long last = lastSeen.get(seenKey);
+        // Iterate a stable snapshot to avoid concurrent-modification issues.
+        for (Map.Entry<String, Long> e : new ArrayList<>(lastSeen.entrySet())) {
+            String seenKey = e.getKey();
+            if (!seenKey.startsWith(workload + "|")) continue;
 
-            if (last == null) {
-                continue;
-            }
-
+            long last = e.getValue();
             if (now - last > RECENT_WINDOW_MS) {
+                lastSeen.remove(seenKey, last);
                 continue;
             }
 
+            String bucketKey = seenKey.substring(workload.length() + 1);
             Integer cost = dynamo.lookupCost(workload, bucketKey);
             if (cost != null) {
                 cache.cacheByBucketKey(bucketKey, cost);

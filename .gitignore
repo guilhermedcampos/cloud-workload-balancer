@@ -13,3 +13,4 @@ scripts/ami/instance.dns
 scripts/ami/image.id
 scripts/lb/lbinstance.id
 scripts/lb/lbinstance.dns
+*.pem
