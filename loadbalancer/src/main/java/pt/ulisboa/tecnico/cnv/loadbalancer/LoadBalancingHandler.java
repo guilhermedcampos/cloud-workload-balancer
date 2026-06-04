@@ -11,19 +11,17 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpHandler;
-
+import com.amazonaws.auth.EnvironmentVariableCredentialsProvider;
 import com.amazonaws.services.lambda.AWSLambda;
 import com.amazonaws.services.lambda.AWSLambdaClient;
 import com.amazonaws.services.lambda.model.InvokeRequest;
 import com.amazonaws.services.lambda.model.InvokeResult;
-import com.amazonaws.auth.EnvironmentVariableCredentialsProvider;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 
-import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.CostEstimator;
-import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.DynamoCost;
-import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.MetricsCache;
 import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.CacheRefresher;
+import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.CostEstimator;
+import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.MetricsCache;
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Supervisor;
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Worker;
 
@@ -38,7 +36,6 @@ public class LoadBalancingHandler implements HttpHandler {
 
     private final MetricsCache metricsCache;
     private final CacheRefresher cacheRefresher;
-    private final DynamoCost dynamoCostRepository;
     private final CostEstimator costEstimator;
 
     private static final double HIGH_LOAD_CPU_THRESHOLD = 0.8;
@@ -53,11 +50,22 @@ public class LoadBalancingHandler implements HttpHandler {
         this.paramNames = List.copyOf(params);
         this.metricsCache = metricsCache;
         this.cacheRefresher = cacheRefresher;
-        this.dynamoCostRepository = new DynamoCost();
         this.costEstimator = new CostEstimator(params, costs);
         this.lambdaClient = AWSLambdaClient.builder()
             .withCredentials(new EnvironmentVariableCredentialsProvider())
             .build();
+
+        // Register this handler instance for its workload so re-dispatch uses the correct configuration.
+        Supervisor.getInstance().setRehandleExchangeHandler(workloadType, (exchange, c) -> {
+            new Thread(() -> {
+                try {
+                    // Try to rehandle the exchange by running through this handler again
+                    this.handle(exchange);
+                } catch (IOException e) {
+                    System.err.println("Rehandle error: " + e.getMessage());
+                }
+            }).start();
+        });
     }
 
     private Map<String, String> parseRawQuery(HttpExchange exchange) {
@@ -202,13 +210,6 @@ public class LoadBalancingHandler implements HttpHandler {
 
         Integer cost = metricsCache.lookup(requestParams);
 
-        if (cost == null && bucketKey != null) {
-            cost = dynamoCostRepository.lookupCost(workloadType, bucketKey);
-            if (cost != null) {
-                metricsCache.cacheByBucketKey(bucketKey, cost);
-            }
-        }
-
         if (cost == null) {
             cost = costEstimator.estimate(requestParams);
         }
@@ -236,7 +237,7 @@ public class LoadBalancingHandler implements HttpHandler {
             return;
         }
 
-        supervisor.registerRequestForWorker(worker, requestId, cost);
+        supervisor.registerRequestForWorker(worker, requestId, cost, exchange);
         long start = System.currentTimeMillis();
         HttpURLConnection connection = null;
         try {

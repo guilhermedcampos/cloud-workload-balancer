@@ -3,17 +3,17 @@ package pt.ulisboa.tecnico.cnv.loadbalancer;
 import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.sun.net.httpserver.HttpServer;
 
 import pt.ulisboa.tecnico.cnv.loadbalancer.autoscaler.AutoScaler;
-import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Supervisor;
-import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.MetricsCache;
 import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.CacheRefresher;
 import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.DynamoCost;
+import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.MetricsCache;
+import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Supervisor;
 
 public class LoadBalancer {
     public static final AtomicLong requestId = new AtomicLong(0);
@@ -73,7 +73,7 @@ public class LoadBalancer {
         scheduler.scheduleAtFixedRate(
                 refresher::refresh,
                 0,
-                60,
+                30,
                 TimeUnit.SECONDS
         );
 

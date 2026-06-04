@@ -8,7 +8,11 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+
+import org.apache.commons.lang3.tuple.Pair;
+import com.sun.net.httpserver.HttpExchange;
 
 import pt.ulisboa.tecnico.cnv.loadbalancer.LoadBalancer;
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.WorkerPool.WorkerPoolType;
@@ -35,9 +39,18 @@ public class Supervisor {
     private final Set<Worker> recoveringWorkers = ConcurrentHashMap.newKeySet();
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private Consumer<Worker> deadWorkerHandler = w -> {};
+    // workload -> callback to re-handle pending exchanges when a worker is being removed
+    private final Map<String, BiConsumer<HttpExchange, Integer>> rehandleExchangeHandlers = new ConcurrentHashMap<>();
 
     public void setDeadWorkerHandler(Consumer<Worker> handler) {
         this.deadWorkerHandler = handler;
+    }
+
+    public void setRehandleExchangeHandler(String workloadType, BiConsumer<HttpExchange, Integer> handler) {
+        if (workloadType == null || handler == null) {
+            return;
+        }
+        this.rehandleExchangeHandlers.put(workloadType, handler);
     }
 
     private Supervisor() {
@@ -118,7 +131,7 @@ public class Supervisor {
 
     }
 
-    public void registerRequestForWorker(Worker worker, long requestId, int cost) {
+    public void registerRequestForWorker(Worker worker, long requestId, int cost, HttpExchange exchange) {
         WorkerPool pool = this.workers.get(worker);
         if (pool == null) {
             // Worker was concurrently removed (died between selection and registration).
@@ -126,7 +139,7 @@ public class Supervisor {
             System.out.println(String.format("[Supervisor] Worker %s removed before request registration; skipping load tracking.", worker.getIp()));
             return;
         }
-        worker.updateLoad(requestId, cost);
+        worker.updateLoad(requestId, cost, exchange);
         this.refreshWorkerPosition(worker);
     }
 
@@ -237,6 +250,43 @@ public class Supervisor {
 
         pool.sendWorkerToPool(worker, this.terminatingPool);
         this.workers.put(worker, this.terminatingPool);
+
+        // If worker still has outstanding requests, drain them and ask the handler to re-handle.
+        if (worker.getLoad() > 0) {
+            List<Pair<HttpExchange, Integer>> pending = worker.drainPendingExchanges();
+            for (Pair<HttpExchange, Integer> p : pending) {
+                try {
+                    HttpExchange exchange = p.getLeft();
+                    String workloadType = extractWorkloadType(exchange);
+                    BiConsumer<HttpExchange, Integer> handler = rehandleExchangeHandlers.get(workloadType);
+                    if (handler != null) {
+                        handler.accept(exchange, p.getRight());
+                    } else {
+                        System.err.println("[Supervisor] No rehandle handler registered for workload: " + workloadType);
+                    }
+                } catch (Exception e) {
+                    System.err.println("[Supervisor] Failed to rehandle exchange: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    private String extractWorkloadType(HttpExchange exchange) {
+        if (exchange == null || exchange.getRequestURI() == null || exchange.getRequestURI().getPath() == null) {
+            return null;
+        }
+
+        String path = exchange.getRequestURI().getPath();
+        if (!path.startsWith("/")) {
+            return null;
+        }
+
+        String[] parts = path.split("/");
+        if (parts.length < 2 || parts[1].isBlank()) {
+            return null;
+        }
+
+        return parts[1];
     }
 
     public void refreshWorkerPosition(Worker worker) {

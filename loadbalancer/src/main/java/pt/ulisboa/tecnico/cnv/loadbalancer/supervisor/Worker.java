@@ -1,15 +1,18 @@
 package pt.ulisboa.tecnico.cnv.loadbalancer.supervisor;
 
+import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.commons.lang3.tuple.Pair;
 
 import com.amazonaws.services.ec2.model.Instance;
+import com.sun.net.httpserver.HttpExchange;
 
 public class Worker {
     // Comparators
@@ -31,7 +34,8 @@ public class Worker {
 
     private final Instance instance;
     private final ReadWriteLock loadRWLock = new ReentrantReadWriteLock();
-    private final Set<Pair<Long, Integer>> currentLoad = new HashSet<>();
+    // map requestId -> (cost, exchange)
+    private final Map<Long, Pair<Integer, HttpExchange>> currentLoad = new HashMap<>();
 
     public Worker(Instance instance) {
         this.instance = instance;
@@ -69,10 +73,10 @@ public class Worker {
         return instance;
     }
 
-    public void updateLoad(long requestId, int cost) {
+    public void updateLoad(long requestId, int cost, HttpExchange exchange) {
         loadRWLock.writeLock().lock();
         try {
-            currentLoad.add(Pair.of(requestId, cost));
+            currentLoad.put(requestId, Pair.of(cost, exchange));
         } finally {
             loadRWLock.writeLock().unlock();
         }
@@ -81,7 +85,7 @@ public class Worker {
     public void removeLoad(long requestId) {
         loadRWLock.writeLock().lock();
         try {
-            currentLoad.removeIf(p -> p.getLeft() == requestId);
+            currentLoad.remove(requestId);
         } finally {
             loadRWLock.writeLock().unlock();
         }
@@ -90,9 +94,26 @@ public class Worker {
     public int getLoad() {
         loadRWLock.readLock().lock();
         try {
-            return currentLoad.stream().mapToInt(Pair::getRight).sum();
+            return currentLoad.values().stream().mapToInt(Pair::getLeft).sum();
         } finally {
             loadRWLock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Return and clear all pending request exchanges and costs for this worker.
+     */
+    public List<Pair<HttpExchange, Integer>> drainPendingExchanges() {
+        loadRWLock.writeLock().lock();
+        try {
+            List<Pair<HttpExchange, Integer>> list = new ArrayList<>();
+            for (Pair<Integer, HttpExchange> p : currentLoad.values()) {
+                list.add(Pair.of(p.getRight(), p.getLeft()));
+            }
+            currentLoad.clear();
+            return list;
+        } finally {
+            loadRWLock.writeLock().unlock();
         }
     }
 
