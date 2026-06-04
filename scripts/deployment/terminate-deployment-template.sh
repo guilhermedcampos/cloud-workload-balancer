@@ -23,7 +23,25 @@ aws autoscaling delete-auto-scaling-group \
 aws ec2 delete-launch-template \
 	--launch-template-name CNV-LaunchTemplate 2>/dev/null || true
 
-# Step 4: delete DynamoDB metrics table.
-aws dynamodb delete-table --table-name CNV-Metrics 2>/dev/null && \
-    echo "DynamoDB table CNV-Metrics deleted." || \
-    echo "DynamoDB table CNV-Metrics not found, skipping."
+# Step 4: terminate Load Balancer instance.
+if [ -f "$DIR/lb/lbinstance.id" ]; then
+    LB_ID=$(cat "$DIR/lb/lbinstance.id")
+
+    aws ec2 terminate-instances \
+        --instance-ids "$LB_ID" >/dev/null 2>&1 || true
+
+    echo "LB instance $LB_ID termination requested."
+fi
+
+# Step 5: delete DynamoDB metrics tables.
+TABLES=(
+    "CNV-Metrics-Fractals"
+    "CNV-Metrics-DNA"
+    "CNV-Metrics-GrayScott"
+)
+
+for T in "${TABLES[@]}"; do
+    aws dynamodb delete-table --table-name "$T" 2>/dev/null && \
+        echo "DynamoDB table $T deleted." || \
+        echo "DynamoDB table $T not found, skipping."
+done

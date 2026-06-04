@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source config.sh
+source "$(dirname "$(realpath "$0")")/../config.sh"
 
 # Step 1: launch a vm instance.
 $DIR/launch-lb-vm.sh

@@ -2,19 +2,21 @@
 
 source "$(dirname "$(realpath "$0")")/../config.sh"
 
+DIR="$(dirname "$(realpath "$0")")"
+
 ssh -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEYPAR_PATH" ec2-user@$(cat lbinstance.dns) \
     "sudo yum update -y && sudo yum install java-11-amazon-corretto-devel.x86_64 -y && sudo yum install jq -y"
 
 scp -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEYPAR_PATH" \
-    ../../loadbalancer/target/loadbalancer-1.0-jar-with-dependencies.jar \
+    "$DIR/../../loadbalancer/target/loadbalancer-1.0-jar-with-dependencies.jar" \
     ec2-user@$(cat lbinstance.dns):loadbalancer.jar
 
 scp -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEYPAR_PATH" \
-    start-loadbalancer.sh \
+    "$DIR/start-loadbalancer.sh" \
     ec2-user@$(cat lbinstance.dns):start-loadbalancer.sh
 
 scp -o StrictHostKeyChecking=no -i "$AWS_EC2_SSH_KEYPAR_PATH" \
-    loadbalancer.service \
+    "$DIR/loadbalancer.service" \
     ec2-user@$(cat lbinstance.dns):loadbalancer.service
 
 LB_ID=$(cat lbinstance.id)
@@ -29,8 +31,10 @@ AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN
 AWS_AMI_ID=$(cat "$DIR/../ami/image.id")
 AWS_KEYPAIR_NAME=$AWS_KEYPAIR_NAME
 AWS_SECURITY_GROUP=$AWS_SECURITY_GROUP
-DYNAMODB_TABLE=${DYNAMODB_TABLE:-CNV-Metrics}
-DYNAMODB_BUCKET_INDEX=${DYNAMODB_BUCKET_INDEX:-workloadBucketKey-tsEpochMs-index}
+DYNAMODB_TABLE_FRACTALS=CNV-Metrics-Fractals
+DYNAMODB_TABLE_DNA=CNV-Metrics-DNA
+DYNAMODB_TABLE_GRAYSCOTT=CNV-Metrics-GrayScott
+DYNAMODB_BUCKET_INDEX=workloadBucketKey-tsEpochMs-index
 EOF
 chmod 600 /home/ec2-user/lb.env
 "

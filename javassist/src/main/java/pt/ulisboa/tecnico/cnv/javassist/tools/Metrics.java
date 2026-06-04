@@ -5,11 +5,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Collections;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -30,7 +29,7 @@ public class Metrics {
 
     /*
      * Multiplicative complexity model:
-     *  Cost = (instructions / 1e6) * (1 + 0.05·methods + 0.05·constructors) * (1 + log(1 + fragmentation))
+     *  Cost = (instructions / 1e6) * (1  + 0.05·constructors) * (1 + log(1 + fragmentation))
      */
 
     private static final double BASE_DIVISOR = 1_000_000.0;
@@ -46,16 +45,20 @@ public class Metrics {
     private static final Pattern FRAGMENTATION_PATTERN =
             Pattern.compile("fragmentation=([0-9]+(?:\\.[0-9]+)?)");
 
-    private static final String TABLE = System.getenv("DYNAMODB_TABLE");
+    private static final String FRACTALS_TABLE =
+        System.getenv("DYNAMODB_TABLE_FRACTALS");
+
+    private static final String DNA_TABLE =
+            System.getenv("DYNAMODB_TABLE_DNA");
+
+    private static final String GRAYSCOTT_TABLE =
+            System.getenv("DYNAMODB_TABLE_GRAYSCOTT");
+
+    private static final int BUFFER_CAPACITY = 1024;
 
     private static final BlockingQueue<Map<String, AttributeValue>> BUFFER =
-            new LinkedBlockingQueue<>();
+            new LinkedBlockingQueue<>(BUFFER_CAPACITY);
 
-    private static final ExecutorService WRITER = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "dynamo-writer");
-        t.setDaemon(true);
-        return t;
-    });
 
     private static final AmazonDynamoDB DYNAMO = initDynamo();
 
@@ -67,9 +70,28 @@ public class Metrics {
 
     private Metrics() {}
 
+    private static String getTableForWorkload(String workload) {
+        switch (workload) {
+            case "fractals":
+                return FRACTALS_TABLE;
+
+            case "dna":
+                return DNA_TABLE;
+
+            case "grayscott":
+                return GRAYSCOTT_TABLE;
+
+            default:
+                return null;
+        }
+    }
+
     private static AmazonDynamoDB initDynamo() {
-        if (TABLE == null) {
-            System.err.println("[Metrics] DYNAMODB_TABLE not set — DynamoDB disabled");
+        if (FRACTALS_TABLE == null
+                && DNA_TABLE == null
+                && GRAYSCOTT_TABLE == null) {
+
+            System.err.println("[Metrics] No DynamoDB tables configured, DynamoDB disabled");
             return null;
         }
         try {
@@ -83,7 +105,7 @@ public class Metrics {
     }
 
     static {
-        if (TABLE != null && DYNAMO != null) {
+        if (DYNAMO != null) {
             FLUSHER.scheduleAtFixedRate(
                     Metrics::flushToDynamo,
                     0,
@@ -160,8 +182,12 @@ public class Metrics {
             e.printStackTrace();
         }
 
-        if (TABLE != null && DYNAMO != null) {
-            String[] parts = outputLine.split(",", 8);
+        String[] parts = outputLine.split(",", 8);
+
+        String workload = parts.length > 1 ? parts[1] : "";
+        String table = getTableForWorkload(workload);
+
+        if (table != null && DYNAMO != null) {
 
             Map<String, AttributeValue> item = new HashMap<>();
             item.put("requestId", new AttributeValue(UUID.randomUUID().toString()));
@@ -177,7 +203,6 @@ public class Metrics {
             item.put("complexity", new AttributeValue().withN(Long.toString(complexity)));
 
 
-            String workload = parts.length > 1 ? parts[1] : "";
             String paramsBlob = parts.length > 2 ? parts[2] : "";
             Map<String, String> rawParams = parseParamsBlob(paramsBlob);
 
@@ -191,62 +216,59 @@ public class Metrics {
 
             boolean queued = BUFFER.offer(item);
             if (!queued) {
-                WRITER.submit(() -> {
-                    try {
-                        DYNAMO.putItem(TABLE, item);
-                    } catch (Exception e) {
-                        System.err.println("[Metrics] DynamoDB fallback write failed: " + e.getMessage());
-                        e.printStackTrace();
-                    }
-                });
+                System.err.println("[Metrics] Warning: Buffer full, dropping metric: " + outputLine);
             }
         }
     }
 
     private static void flushToDynamo() {
-        if (TABLE == null || DYNAMO == null) return;
+        if (DYNAMO == null) return;
 
         List<Map<String, AttributeValue>> drained = new ArrayList<>();
         BUFFER.drainTo(drained, 25);
         if (drained.isEmpty()) return;
 
-        List<WriteRequest> batch = new ArrayList<>(drained.size());
+        Map<String, List<WriteRequest>> grouped = new HashMap<>();
+
         for (Map<String, AttributeValue> item : drained) {
-            batch.add(new WriteRequest(new PutRequest().withItem(item)));
+            AttributeValue workloadAttr = item.get("workload");
+            if (workloadAttr == null) continue;
+
+            String workload = workloadAttr.getS();
+            String table = getTableForWorkload(workload);
+            if (table == null) continue;
+
+            grouped.computeIfAbsent(table, k -> new ArrayList<>())
+                .add(new WriteRequest(new PutRequest().withItem(item)));
         }
 
-        Map<String, List<WriteRequest>> requestItems = new HashMap<>();
-        requestItems.put(TABLE, batch);
+        for (Map.Entry<String, List<WriteRequest>> entry : grouped.entrySet()) {
+            String table = entry.getKey();
+            List<WriteRequest> batch = entry.getValue();
 
-        BatchWriteItemRequest request = new BatchWriteItemRequest().withRequestItems(requestItems);
+            BatchWriteItemRequest request =
+                    new BatchWriteItemRequest().withRequestItems(
+                            Collections.singletonMap(table, batch)
+                    );
 
-        int attempts = 0;
-        while (true) {
-            try {
-                BatchWriteItemResult result = DYNAMO.batchWriteItem(request);
-                Map<String, List<WriteRequest>> unprocessed = result.getUnprocessedItems();
-                if (unprocessed == null || unprocessed.isEmpty()) break;
-                attempts++;
-                if (attempts > 5) {
-                    System.err.println("[Metrics] Some items unprocessed after retries: " + unprocessed.size());
-                    break;
-                }
-                request = new BatchWriteItemRequest().withRequestItems(unprocessed);
+            int attempts = 0;
+
+            while (true) {
                 try {
+                    BatchWriteItemResult result = DYNAMO.batchWriteItem(request);
+
+                    Map<String, List<WriteRequest>> unprocessed = result.getUnprocessedItems();
+                    if (unprocessed == null || unprocessed.isEmpty()) break;
+
+                    request = new BatchWriteItemRequest().withRequestItems(unprocessed);
+
+                    attempts++;
+                    if (attempts > 5) break;
+
                     Thread.sleep(100L * (1 << attempts));
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            } catch (Exception e) {
-                System.err.println("[Metrics] DynamoDB batchWrite failed: " + e.getMessage());
-                e.printStackTrace();
-                attempts++;
-                if (attempts > 5) break;
-                try {
-                    Thread.sleep(200L * attempts);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
+
+                } catch (Exception e) {
+                    System.err.println("[Metrics] batchWrite failed: " + e.getMessage());
                     break;
                 }
             }

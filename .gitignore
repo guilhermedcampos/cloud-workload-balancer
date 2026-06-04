@@ -11,3 +11,5 @@ scripts/config.sh
 scripts/ami/instance.id
 scripts/ami/instance.dns
 scripts/ami/image.id
+scripts/lb/lbinstance.id
+scripts/lb/lbinstance.dns
