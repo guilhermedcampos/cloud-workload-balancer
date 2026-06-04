@@ -23,6 +23,7 @@ import com.amazonaws.auth.EnvironmentVariableCredentialsProvider;
 import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.CostEstimator;
 import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.DynamoCost;
 import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.MetricsCache;
+import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.CacheRefresher;
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Supervisor;
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Worker;
 
@@ -36,6 +37,7 @@ public class LoadBalancingHandler implements HttpHandler {
     private final List<String> paramNames;
 
     private final MetricsCache metricsCache;
+    private final CacheRefresher cacheRefresher;
     private final DynamoCost dynamoCostRepository;
     private final CostEstimator costEstimator;
 
@@ -46,10 +48,11 @@ public class LoadBalancingHandler implements HttpHandler {
     private final AWSLambda lambdaClient;
 
 
-    public LoadBalancingHandler(String workloadType, List<String> params, List<Integer> bucketCounts, List<Integer> costs) {
+    public LoadBalancingHandler(String workloadType, MetricsCache metricsCache, CacheRefresher cacheRefresher, List<String> params, List<Integer> costs) {
         this.workloadType = workloadType;
         this.paramNames = List.copyOf(params);
-        this.metricsCache = new MetricsCache(params, bucketCounts);
+        this.metricsCache = metricsCache;
+        this.cacheRefresher = cacheRefresher;
         this.dynamoCostRepository = new DynamoCost();
         this.costEstimator = new CostEstimator(params, costs);
         this.lambdaClient = AWSLambdaClient.builder()
@@ -192,6 +195,10 @@ public class LoadBalancingHandler implements HttpHandler {
         long requestId = LoadBalancer.requestId.incrementAndGet();
         Map<String, Integer> requestParams = getRequestParams(exchange);
         String bucketKey = metricsCache.bucketKey(requestParams);
+
+        if (cacheRefresher != null && bucketKey != null) {
+            cacheRefresher.recordAccess(workloadType, bucketKey);
+        }
 
         Integer cost = metricsCache.lookup(requestParams);
 

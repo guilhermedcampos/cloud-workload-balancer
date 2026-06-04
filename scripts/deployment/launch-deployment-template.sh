@@ -12,13 +12,13 @@ for T in "${TABLES[@]}"; do
             --table-name "$T" \
             --attribute-definitions \
                 AttributeName=requestId,AttributeType=S \
-                AttributeName=workloadBucketKey,AttributeType=S \
+                AttributeName=bucketKey,AttributeType=S \
                 AttributeName=tsEpochMs,AttributeType=N \
             --key-schema AttributeName=requestId,KeyType=HASH \
             --global-secondary-indexes '[{
-                "IndexName": "workloadBucketKey-tsEpochMs-index",
+                "IndexName": "bucketKey-tsEpochMs-index",
                 "KeySchema": [
-                    {"AttributeName": "workloadBucketKey", "KeyType": "HASH"},
+                    {"AttributeName": "bucketKey", "KeyType": "HASH"},
                     {"AttributeName": "tsEpochMs", "KeyType": "RANGE"}
                 ],
                 "Projection": {"ProjectionType": "ALL"}

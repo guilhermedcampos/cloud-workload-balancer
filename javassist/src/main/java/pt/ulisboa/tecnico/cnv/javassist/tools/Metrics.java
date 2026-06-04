@@ -59,6 +59,8 @@ public class Metrics {
     private static final BlockingQueue<Map<String, AttributeValue>> BUFFER =
             new LinkedBlockingQueue<>(BUFFER_CAPACITY);
 
+    public static final int DEFAULT_BUCKET = 40;
+
 
     private static final AmazonDynamoDB DYNAMO = initDynamo();
 
@@ -209,7 +211,6 @@ public class Metrics {
             String bucketKey = buildBucketKey(workload, rawParams);
             if (bucketKey != null) {
                 item.put("bucketKey", new AttributeValue(bucketKey));
-                item.put("workloadBucketKey", new AttributeValue(workload + "|" + bucketKey));
             }
             item.put("tsEpochMs", new AttributeValue().withN(Long.toString(System.currentTimeMillis())));
 
@@ -325,15 +326,15 @@ public class Metrics {
             Integer iterations = parseIntOrNull(rawParams.get("iterations"));
             Integer resolution = deriveResolution(rawParams);
             if (iterations == null || resolution == null) return null;
-            int bIterations = Math.floorDiv(iterations, 10) * 10;
-            int bResolution = Math.floorDiv(resolution, 10) * 10;
+            int bIterations = Math.floorDiv(iterations, DEFAULT_BUCKET) * DEFAULT_BUCKET;
+            int bResolution = Math.floorDiv(resolution, DEFAULT_BUCKET) * DEFAULT_BUCKET;
             return "iterations=" + bIterations + "|resolution=" + bResolution;
         }
 
         if ("dna".equals(workload)) {
             Integer seqLength = deriveSeqLength(rawParams);
             if (seqLength == null) return null;
-            int bSeq = Math.floorDiv(seqLength, 10) * 10;
+            int bSeq = Math.floorDiv(seqLength, DEFAULT_BUCKET) * DEFAULT_BUCKET;
             return "seqLength=" + bSeq;
         }
 
@@ -341,8 +342,8 @@ public class Metrics {
             Integer size = parseIntOrNull(rawParams.get("size"));
             Integer maxIterations = parseIntOrNull(rawParams.get("maxIterations"));
             if (size == null || maxIterations == null) return null;
-            int bSize = Math.floorDiv(size, 10) * 10;
-            int bIter = Math.floorDiv(maxIterations, 10) * 10;
+            int bSize = Math.floorDiv(size, DEFAULT_BUCKET) * DEFAULT_BUCKET;
+            int bIter = Math.floorDiv(maxIterations, DEFAULT_BUCKET) * DEFAULT_BUCKET;
             return "size=" + bSize + "|maxIterations=" + bIter;
         }
 

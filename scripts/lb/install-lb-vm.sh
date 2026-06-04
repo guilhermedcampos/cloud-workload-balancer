@@ -34,7 +34,7 @@ AWS_SECURITY_GROUP=$AWS_SECURITY_GROUP
 DYNAMODB_TABLE_FRACTALS=CNV-Metrics-Fractals
 DYNAMODB_TABLE_DNA=CNV-Metrics-DNA
 DYNAMODB_TABLE_GRAYSCOTT=CNV-Metrics-GrayScott
-DYNAMODB_BUCKET_INDEX=workloadBucketKey-tsEpochMs-index
+DYNAMODB_BUCKET_INDEX=bucketKey-tsEpochMs-index
 EOF
 chmod 600 /home/ec2-user/lb.env
 "

@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 
@@ -33,6 +35,10 @@ public class MetricsCache {
         this.bucketCounts = Collections.unmodifiableList(new ArrayList<>(bucketCounts));
     }
 
+    public Set<String> snapshotKeys() {
+        return new HashSet<>(cache.keySet());
+    }
+    
     private String keyFor(Map<String, Integer> params) {
         StringBuilder sb = new StringBuilder(paramNames.size() * 8);
         for (int i = 0; i < paramNames.size(); i++) {

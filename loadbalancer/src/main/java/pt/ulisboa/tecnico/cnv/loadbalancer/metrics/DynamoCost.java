@@ -15,19 +15,23 @@ import com.amazonaws.services.dynamodbv2.model.QueryResult;
 public class DynamoCost {
 
     private final AmazonDynamoDB dynamo;
-    private final String tableName;
+    private final String fractalsTable;
+    private final String dnaTable;
+    private final String grayscottTable;
     private final String indexName;
     private final int limit;
 
     public DynamoCost() {
-        this.tableName = System.getenv("DYNAMODB_TABLE");
+        this.fractalsTable = System.getenv("DYNAMODB_TABLE_FRACTALS");
+        this.dnaTable = System.getenv("DYNAMODB_TABLE_DNA");
+        this.grayscottTable = System.getenv("DYNAMODB_TABLE_GRAYSCOTT");
         this.indexName = System.getenv().getOrDefault(
                 "DYNAMODB_BUCKET_INDEX",
-                "workloadBucketKey-tsEpochMs-index"
+                "bucketKey-tsEpochMs-index"
         );
         this.limit = parsePositiveInt(System.getenv("DYNAMODB_QUERY_LIMIT"), 20);
 
-        if (tableName == null || tableName.isBlank()) {
+        if (fractalsTable == null && dnaTable == null && grayscottTable == null) {
             this.dynamo = null;
             return;
         }
@@ -37,21 +41,31 @@ public class DynamoCost {
                 .build();
     }
 
+    private String tableForWorkload(String workload) {
+        if ("fractals".equals(workload)) return fractalsTable;
+        if ("dna".equals(workload)) return dnaTable;
+        if ("grayscott".equals(workload)) return grayscottTable;
+        return null;
+    }
+
     public Integer lookupCost(String workload, String bucketKey) {
         if (dynamo == null || workload == null || workload.isBlank() || bucketKey == null || bucketKey.isBlank()) {
             return null;
         }
 
-        String workloadBucketKey = workload + "|" + bucketKey;
+        String table = tableForWorkload(workload);
+        if (table == null || table.isBlank()) {
+            return null;
+        }
 
         try {
             HashMap<String, AttributeValue> values = new HashMap<>();
-            values.put(":wbk", new AttributeValue(workloadBucketKey));
+            values.put(":bk", new AttributeValue(bucketKey));
 
             QueryRequest request = new QueryRequest()
-                    .withTableName(tableName)
+                    .withTableName(table)
                     .withIndexName(indexName)
-                    .withKeyConditionExpression("workloadBucketKey = :wbk")
+                    .withKeyConditionExpression("bucketKey = :bk")
                     .withExpressionAttributeValues(values)
                     .withProjectionExpression("complexity")
                     .withScanIndexForward(false)
@@ -69,7 +83,6 @@ public class DynamoCost {
                     try {
                         complexities.add((int) Math.min(Integer.MAX_VALUE, Long.parseLong(c.getN())));
                     } catch (NumberFormatException ignored) {
-                        // Ignore malformed rows.
                     }
                 }
             });
@@ -79,9 +92,8 @@ public class DynamoCost {
             }
 
             return median(complexities);
-
         } catch (Exception e) {
-            System.err.println("[DynamoCost] query failed for key " + workloadBucketKey + ": " + e.getMessage());
+            System.err.println("[DynamoCost] query failed for key " + bucketKey + ": " + e.getMessage());
             return null;
         }
     }
