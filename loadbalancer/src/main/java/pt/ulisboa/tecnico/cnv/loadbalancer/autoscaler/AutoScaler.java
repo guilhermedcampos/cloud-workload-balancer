@@ -31,7 +31,7 @@ public class AutoScaler {
     private final Set<String>   pendingInstanceIds     = ConcurrentHashMap.newKeySet();
     private static final double HIGH_CPU_THRESHOLD     = 0.8;
     private static final int    MIN_INSTANCES          = 1;
-    private static final int    MAX_INSTANCES          = 3;
+    private static final int    MAX_INSTANCES          = 6;
     private static final long   SCALING_INTERVAL       = 10_000;
     private static final long   SCALE_DOWN_COOLDOWN_MS = 60_000; // 2 min after last scale-up
     private volatile long       lastScaleUpTime        = 0;
