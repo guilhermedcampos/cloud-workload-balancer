@@ -195,6 +195,8 @@ public class Supervisor {
         WorkerPool pool = this.pools.get(WorkerPoolType.WORKING);
         Worker worker = pool.getAvailableWorker(cost);
         if (worker != null) {
+            System.out.println(String.format("[Supervisor] Found optimal worker %s with load %d and CPU usage %f for cost %d",
+                    worker.getIp(), worker.getLoad(), worker.getCpuUsage(), cost));
             return worker;
         }
 
@@ -202,6 +204,8 @@ public class Supervisor {
         pool = this.pools.get(WorkerPoolType.TERMINATING);
         worker = pool.getAvailableWorker(cost);
         if (worker != null) {
+            System.out.println(String.format("[Supervisor] No optimal worker available, but found terminating worker %s with load %d and CPU usage %f. Assigning request to it to preserve load balance.",
+                    worker.getIp(), worker.getLoad(), worker.getCpuUsage()));
             return worker;
         }
 
@@ -212,6 +216,7 @@ public class Supervisor {
     public void removeInactiveWorker(Worker worker) {
         WorkerPool pool = this.workers.remove(worker);
         if (pool != null) {
+            System.out.println(String.format("[Supervisor] Removing worker %s from pool %s", worker.getIp(), pool.getType().name()));
             pool.removeWorker(worker);
         }
     }

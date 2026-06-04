@@ -203,6 +203,7 @@ public class LoadBalancingHandler implements HttpHandler {
         long requestId = LoadBalancer.requestId.incrementAndGet();
         Map<String, Integer> requestParams = getRequestParams(exchange);
         String bucketKey = metricsCache.bucketKey(requestParams);
+        System.out.println("[LB] Received " + workloadType + " request with params=" + requestParams + " bucketKey=" + bucketKey);
 
         if (cacheRefresher != null && bucketKey != null) {
             cacheRefresher.recordAccess(workloadType, bucketKey);
@@ -211,6 +212,7 @@ public class LoadBalancingHandler implements HttpHandler {
         Integer cost = metricsCache.lookup(requestParams);
 
         if (cost == null) {
+            System.out.println("[LB] Cache miss for " + workloadType + " with bucketKey=" + bucketKey + ", estimating cost...");
             cost = costEstimator.estimate(requestParams);
         }
 
@@ -218,6 +220,7 @@ public class LoadBalancingHandler implements HttpHandler {
 
         if (cost <= EC2_PREFER_THRESHOLD
                 && supervisor.hasOnlyHighLoadActiveWorkers(HIGH_LOAD_CPU_THRESHOLD)) {
+            System.out.println("[LB] All workers are under high load, invoking Lambda for " + workloadType + " with cost=" + cost);
             invokeLambda(exchange, cost);
             return;
         }
@@ -226,6 +229,7 @@ public class LoadBalancingHandler implements HttpHandler {
 
         if (worker == null) {
             if (cost <= LAMBDA_MAX_COST) {
+                System.out.println("[LB] No workers available, invoking Lambda for " + workloadType + " with cost=" + cost);
                 invokeLambda(exchange, cost);
                 return;
             }

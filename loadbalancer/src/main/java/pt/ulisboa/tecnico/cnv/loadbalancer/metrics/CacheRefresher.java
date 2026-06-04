@@ -31,6 +31,7 @@ public class CacheRefresher {
             return;
         }
         lastSeen.put(workload + "|" + bucketKey, System.currentTimeMillis());
+        System.out.println("[cacheRefresher] Recorded access for " + workload + " bucketKey=" + bucketKey);
     }
 
     public void refresh() {
@@ -57,6 +58,7 @@ public class CacheRefresher {
             Integer cost = dynamo.lookupCost(workload, bucketKey);
             if (cost != null) {
                 cache.cacheByBucketKey(bucketKey, cost);
+                System.out.println("[cacheRefresher] Refreshed cache for " + workload + " bucketKey=" + bucketKey + " with cost=" + cost);
             }
         }
     }
