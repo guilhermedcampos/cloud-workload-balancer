@@ -44,6 +44,7 @@ public class LoadBalancingHandler implements HttpHandler {
     private static final int EC2_PREFER_THRESHOLD = 20_000; // send lambda if cost is below this threshold and only high-load workers are available
     private static final int MAX_WORKER_WAIT_RETRIES = 5;
     private static final long WORKER_WAIT_SLEEP_MS = 5_000;
+    private static final int GRAYSCOTT_MULTIPLYER = 25;
 
     private final AWSLambda lambdaClient;
 
@@ -225,8 +226,8 @@ public class LoadBalancingHandler implements HttpHandler {
             if ("grayscott".equals(workloadType)) {
                 String stopOnExtinction = parseRawQuery(exchange).getOrDefault("stopOnExtinction", "true");
                 if ("false".equalsIgnoreCase(stopOnExtinction)) {
-                    cost = cost * 25;
-                    System.out.println("[LB] stopOnExtinction=false : applying x10 cost multiplier: cost=" + cost);
+                    cost = cost * GRAYSCOTT_MULTIPLYER;
+                    System.out.println("[LB] stopOnExtinction=false : applying" +  GRAYSCOTT_MULTIPLYER + " cost multiplier: cost=" + cost);
                 }
             }
         }
