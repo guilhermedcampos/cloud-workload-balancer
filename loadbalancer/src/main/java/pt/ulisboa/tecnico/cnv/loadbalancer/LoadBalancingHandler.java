@@ -24,6 +24,7 @@ import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.CostEstimator;
 import pt.ulisboa.tecnico.cnv.loadbalancer.metrics.MetricsCache;
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Supervisor;
 import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.Worker;
+import pt.ulisboa.tecnico.cnv.loadbalancer.supervisor.WorkerPool;
 
 /**
  * Simple round-robin reverse proxy load balancer:
@@ -217,16 +218,14 @@ public class LoadBalancingHandler implements HttpHandler {
             System.out.println("[LB] Cache hit for " + workloadType + " with bucketKey=" + bucketKey + ", cost=" + cost);
         } else {
             System.out.println("[LB] Cache miss for " + workloadType + " with bucketKey=" + bucketKey + ", estimating cost...");
-            int finalCost = (int) Math.max(1, Math.round(costEstimator.estimate(requestParams)));
+            int finalCost = (int) Math.max(1, Math.round(costEstimator.estimate(workloadType, requestParams)));
             cost = finalCost;
             System.out.println("[LB] Estimated cost for " + workloadType + " with bucketKey=" + bucketKey + " is " + cost);
         }
 
         Supervisor supervisor = Supervisor.getInstance();
 
-        if (cost > WorkerPool.getMaxLoadThreshold()) {
-            cost = WorkerPool.getMaxLoadThreshold();
-        }
+        cost = Math.min(cost, WorkerPool.getMaxLoadThreshold());
 
         if (cost <= EC2_PREFER_THRESHOLD
                 && supervisor.hasOnlyHighLoadActiveWorkers(HIGH_LOAD_CPU_THRESHOLD)) {

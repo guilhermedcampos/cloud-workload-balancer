@@ -17,7 +17,7 @@ public class CostEstimator {
         }
     }
     
-    public double estimate(Map<String, Integer> quantities) {
+    public double estimate(String workload, Map<String, Integer> quantities) {
         double totalCost = 0;
         for (Map.Entry<String, Integer> entry : quantities.entrySet()) {
             String param = entry.getKey();
