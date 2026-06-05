@@ -45,7 +45,7 @@ public class LoadBalancingHandler implements HttpHandler {
     private final AWSLambda lambdaClient;
 
 
-    public LoadBalancingHandler(String workloadType, MetricsCache metricsCache, CacheRefresher cacheRefresher, List<String> params, List<Integer> costs) {
+    public LoadBalancingHandler(String workloadType, MetricsCache metricsCache, CacheRefresher cacheRefresher, List<String> params, List<Double> costs) {
         this.workloadType = workloadType;
         this.paramNames = List.copyOf(params);
         this.metricsCache = metricsCache;
@@ -215,10 +215,16 @@ public class LoadBalancingHandler implements HttpHandler {
             System.out.println("[LB] Cache hit for " + workloadType + " with bucketKey=" + bucketKey + ", cost=" + cost);
         } else {
             System.out.println("[LB] Cache miss for " + workloadType + " with bucketKey=" + bucketKey + ", estimating cost...");
-            cost = costEstimator.estimate(requestParams);
+            int finalCost = (int) Math.max(1, Math.round(costEstimator.estimate(requestParams)));
+            cost = finalCost;
+            System.out.println("[LB] Estimated cost for " + workloadType + " with bucketKey=" + bucketKey + " is " + cost);
         }
 
         Supervisor supervisor = Supervisor.getInstance();
+
+        if (cost > WorkerPool.getMaxLoadThreshold()) {
+            cost = WorkerPool.getMaxLoadThreshold();
+        }
 
         if (cost <= EC2_PREFER_THRESHOLD
                 && supervisor.hasOnlyHighLoadActiveWorkers(HIGH_LOAD_CPU_THRESHOLD)) {
@@ -228,6 +234,7 @@ public class LoadBalancingHandler implements HttpHandler {
         }
 
         Worker worker = supervisor.getOptimalWorker(cost);
+        System.out.println("[LB] Selected worker " + (worker != null ? worker.getInstance().getInstanceId() : "null") + " for requestId=" + requestId + " with cost=" + cost);
 
         if (worker == null) {
             if (cost <= LAMBDA_MAX_COST) {
@@ -243,6 +250,7 @@ public class LoadBalancingHandler implements HttpHandler {
             return;
         }
 
+        System.out.println("[LB] Registering requestId=" + requestId + " with worker " + worker.getInstance().getInstanceId() + " for cost=" + cost);
         supervisor.registerRequestForWorker(worker, requestId, cost, exchange);
         long start = System.currentTimeMillis();
         HttpURLConnection connection = null;
@@ -271,6 +279,7 @@ public class LoadBalancingHandler implements HttpHandler {
             connection.addRequestProperty("X-Request-Id", Long.toString(requestId));
             connection.addRequestProperty("X-Request-Cost", Integer.toString(cost));
             forwardRequestBody(exchange, connection);
+            System.out.println("[LB] Forwarded requestId=" + requestId + " to worker " + worker.getInstance().getInstanceId() + ", waiting for response...");
 
             int responseCode = connection.getResponseCode();
 
@@ -286,6 +295,8 @@ public class LoadBalancingHandler implements HttpHandler {
 
             byte[] responseBody = responseStream.readAllBytes();
             exchange.sendResponseHeaders(responseCode, responseBody.length);
+
+            System.out.println("[LB] Received response for requestId=" + requestId + " from worker " + worker.getInstance().getInstanceId() + " with status=" + responseCode + ", forwarding to client...");
 
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(responseBody);

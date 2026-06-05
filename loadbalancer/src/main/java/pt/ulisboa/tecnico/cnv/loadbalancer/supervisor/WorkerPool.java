@@ -11,7 +11,7 @@ public class WorkerPool {
         WORKING, TERMINATING, NON_RESPONSIVE
     }
 
-    private final int MAX_LOAD_THRESHOLD = 800_000;
+    private final int MAX_LOAD_THRESHOLD = 1_000_000;
 
     private final double HIGH_CPU_THRESHOLD = 0.8;
     private final double MAX_CPU_THRESHOLD = 1.0;
@@ -34,6 +34,10 @@ public class WorkerPool {
         return type;
     }
 
+    public static int getMaxLoadThreshold() {
+        return MAX_LOAD_THRESHOLD;
+    }
+    
     public void addWorker(Worker worker) {
         synchronized (lock) {
             if (sortedByHighLoad.add(worker)) {

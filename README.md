@@ -112,26 +112,24 @@ cp config.sh.template config.sh
 mvn clean package
 
 # 3. Create security group
-cd scripts
-bash ami/create-sec-group.sh
+bash scripts/ami/create-sec-group.sh
 # Copy SECURITY GROUP ID into config.sh
 
 # 4. Build worker AMI
-bash ami/create-image.sh
+bash scripts/ami/create-image.sh
 
-# 5. Deploy infrastructure (ELB + ASG + DynamoDB)
-bash deployment/launch-deployment-template.sh
+# 5. Deploy infrastructure (DynamoDB and create Launch Template)
+bash scripts/deployment/launch-deployment-template.sh
 
-# 6. Run stress test
-../tests-checkpoint/stress-test.sh
+# 6. Creates and Deploys Load Balancer
+bash scripts/lb/create-lb-image.sh
+
+# 7. Run stress test
+bash /tests-checkpoint/stress-test.sh
 
 # 7. Teardown deployment
-bash deployment/terminate-deployment-template.sh
+bash scripts/deployment/terminate-deployment-template.sh
 
 # 8. Remove AMI
-bash ami/deregister-image.sh
+bash scripts/ami/deregister-image.sh
 ```
-
-Notes
-
-This is a checkpoint version of the system so the Java-based Load Balancer and AutoScaler exist as functional skeletons in the codebase, but are not used in the active deployment. The live system relies on AWS Elastic Load Balancing and Auto Scaling Group managed through scripts and AWS services.

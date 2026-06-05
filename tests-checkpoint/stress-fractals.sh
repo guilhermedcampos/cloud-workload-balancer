@@ -1,10 +1,10 @@
 #!/bin/bash
 #
-# Stress-test the custom Load Balancer to trigger AutoScaler scale-out.
+# Stress-fractals the custom Load Balancer to trigger AutoScaler scale-out.
 #
 # Usage:
-#   bash tests-checkpoint/stress-test.sh
-#   CNV_HOST=<lb-dns>:8080 bash tests-checkpoint/stress-test.sh
+#   bash tests-checkpoint/stress-fractals.sh
+#   CNV_HOST=<lb-dns>:8080 bash tests-checkpoint/stress-fractals.sh
 
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"
 source "$SCRIPT_DIR/../scripts/config.sh"
@@ -73,11 +73,7 @@ fire_wave() {
     curl -s "http://$HOST/fractals?w=5000&h=4000&iterations=5000" -o /dev/null &
 
     # XL
-    curl -s "http://$HOST/fractals?w=6000&h=5000&iterations=100000" -o /dev/null &
-
-    # GrayScott — small grid (~3 MB/request) but high iterations for CPU burn
-    #curl -s "http://$HOST/grayscott?size=300&maxIterations=200&f=0.055&k=0.062&seedMode=center" -o /dev/null &
-    #curl -s "http://$HOST/grayscott?size=300&maxIterations=200&f=0.055&k=0.062&seedMode=center" -o /dev/null &    
+    curl -s "http://$HOST/fractals?w=6000&h=5000&iterations=100000" -o /dev/null &   
 }
 
 END_TIME=$(( $(date +%s) + DURATION ))
@@ -93,5 +89,5 @@ done
 echo "Waiting for last wave to complete..."
 wait
 echo ""
-echo "Stress test complete."
+echo "Fractals stress test complete."
 echo "Check worker count in the LB log for '[AutoScaler] Scale-up triggered' messages."

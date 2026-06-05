@@ -66,6 +66,7 @@ public class MetricsCache {
      */
     public Integer lookup(Map<String, Integer> params) {
         String key = keyFor(params);
+        System.out.println("MetricsCache.lookup: key=" + key+ ", params=" + params);
         if (key == null) return null;
         return cache.get(key);
     }

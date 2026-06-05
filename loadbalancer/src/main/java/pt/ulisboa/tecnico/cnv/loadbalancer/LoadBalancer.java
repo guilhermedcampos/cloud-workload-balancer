@@ -26,13 +26,13 @@ public class LoadBalancer {
     // Parameter names and bucket counts for MetricsCache (adjust as needed)
     public static final List<String> FRACTALS_PARAMS = List.of("iterations", "resolution");
     public static final List<Integer> FRACTALS_BUCKETS = List.of(DEFAULT_BUCKET, DEFAULT_BUCKET);
-    public static final List<Integer> FRACTALS_COSTS = List.of(1, 1);
+    public static final List<Double> FRACTALS_COSTS = List.of(0.01, 0.01);
     public static final List<String> DNA_PARAMS = List.of("seqLength");
     public static final List<Integer> DNA_BUCKETS = List.of(DEFAULT_BUCKET);
-    public static final List<Integer> DNA_COSTS = List.of(1);
+    public static final List<Double> DNA_COSTS = List.of(1.0);
     public static final List<String> GRAYSCOTT_PARAMS = List.of("size", "maxIterations");
     public static final List<Integer> GRAYSCOTT_BUCKETS = List.of(DEFAULT_BUCKET, DEFAULT_BUCKET);
-    public static final List<Integer> GRAYSCOTT_COSTS = List.of(1, 1);
+    public static final List<Double> GRAYSCOTT_COSTS = List.of(1.0, 1.0);
 
     public static final MetricsCache FRACTALS_CACHE =
         new MetricsCache(FRACTALS_PARAMS, FRACTALS_BUCKETS);
