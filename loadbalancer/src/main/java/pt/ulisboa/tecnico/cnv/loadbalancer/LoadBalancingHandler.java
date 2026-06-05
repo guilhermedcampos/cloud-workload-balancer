@@ -211,7 +211,9 @@ public class LoadBalancingHandler implements HttpHandler {
 
         Integer cost = metricsCache.lookup(requestParams);
 
-        if (cost == null) {
+        if (cost != null) {
+            System.out.println("[LB] Cache hit for " + workloadType + " with bucketKey=" + bucketKey + ", cost=" + cost);
+        } else {
             System.out.println("[LB] Cache miss for " + workloadType + " with bucketKey=" + bucketKey + ", estimating cost...");
             cost = costEstimator.estimate(requestParams);
         }

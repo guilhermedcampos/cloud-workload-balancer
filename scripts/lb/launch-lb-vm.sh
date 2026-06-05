@@ -22,7 +22,9 @@ echo "New LB instance with id $(cat "$DIR/lbinstance.id")."
 
 aws ec2 create-tags \
     --resources "$(cat "$DIR/lbinstance.id")" \
-    --tags Key=type,Value=load-balancer
+    --tags \
+        Key=type,Value=load-balancer \
+        Key=Name,Value=load-balancer
 
 aws ec2 wait instance-running --instance-ids $(cat "$DIR/lbinstance.id")
 echo "New LB instance with id $(cat "$DIR/lbinstance.id") is now running."
