@@ -49,35 +49,35 @@ echo "  ssh -i \$AWS_EC2_SSH_KEYPAR_PATH ec2-user@\$(cat scripts/lb/lbinstance.d
 echo ""
 
 fire_wave() {
-    curl -s "http://$HOST/fractals?w=200&h=150&iterations=50" -o /dev/null &
+        # XS-0
+    curl -s "http://$HOST/grayscott?size=128&maxIterations=100&f=0.030&k=0.062&stopOnExtinction=true&seedMode=center" -o /dev/null &
+
+    # XS
+    curl -s "http://$HOST/grayscott?size=256&maxIterations=100&f=0.030&k=0.062&stopOnExtinction=true&seedMode=center" -o /dev/null &
+
+    # S-
+    curl -s "http://$HOST/grayscott?size=256&maxIterations=300&f=0.040&k=0.060&stopOnExtinction=true&seedMode=ring" -o /dev/null &
 
     # S
-    curl -s "http://$HOST/fractals?w=400&h=300&iterations=100" -o /dev/null &
+    curl -s "http://$HOST/grayscott?size=512&maxIterations=500&f=0.040&k=0.060&stopOnExtinction=false&seedMode=ring" -o /dev/null &
 
     # S+
-    curl -s "http://$HOST/fractals?w=800&h=600&iterations=100" -o /dev/null &
+    curl -s "http://$HOST/grayscott?size=512&maxIterations=1000&f=0.050&k=0.060&stopOnExtinction=false&seedMode=stripe" -o /dev/null &
 
     # M-
-    curl -s "http://$HOST/fractals?w=1200&h=800&iterations=200" -o /dev/null &
+    curl -s "http://$HOST/grayscott?size=768&maxIterations=1500&f=0.055&k=0.061&stopOnExtinction=false&seedMode=stripe" -o /dev/null &
 
     # M
-    curl -s "http://$HOST/fractals?w=2000&h=1200&iterations=300" -o /dev/null &
+    curl -s "http://$HOST/grayscott?size=1024&maxIterations=2000&f=0.060&k=0.061&stopOnExtinction=false&seedMode=stripe" -o /dev/null &
 
     # M+
-    curl -s "http://$HOST/fractals?w=3000&h=2000&iterations=500" -o /dev/null &
-
-    # L-
-    curl -s "http://$HOST/fractals?w=4000&h=3000&iterations=1000" -o /dev/null &
+    curl -s "http://$HOST/grayscott?size=1024&maxIterations=5000&f=0.070&k=0.062&stopOnExtinction=false&seedMode=ring" -o /dev/null &
 
     # L
-    curl -s "http://$HOST/fractals?w=5000&h=4000&iterations=5000" -o /dev/null &
+    curl -s "http://$HOST/grayscott?size=1536&maxIterations=8000&f=0.090&k=0.063&stopOnExtinction=false&seedMode=center" -o /dev/null &
 
     # XL
-    curl -s "http://$HOST/fractals?w=6000&h=5000&iterations=100000" -o /dev/null &
-
-    # GrayScott — small grid (~3 MB/request) but high iterations for CPU burn
-    #curl -s "http://$HOST/grayscott?size=300&maxIterations=200&f=0.055&k=0.062&seedMode=center" -o /dev/null &
-    #curl -s "http://$HOST/grayscott?size=300&maxIterations=200&f=0.055&k=0.062&seedMode=center" -o /dev/null &    
+    curl -s "http://$HOST/grayscott?size=2048&maxIterations=12000&f=0.120&k=0.065&stopOnExtinction=true&seedMode=center" -o /dev/null &  
 }
 
 END_TIME=$(( $(date +%s) + DURATION ))

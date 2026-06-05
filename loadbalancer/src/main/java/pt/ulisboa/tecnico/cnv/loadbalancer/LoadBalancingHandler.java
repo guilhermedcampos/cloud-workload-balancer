@@ -221,6 +221,14 @@ public class LoadBalancingHandler implements HttpHandler {
             int finalCost = (int) Math.max(1, Math.round(costEstimator.estimate(workloadType, requestParams)));
             cost = finalCost;
             System.out.println("[LB] Estimated cost for " + workloadType + " with bucketKey=" + bucketKey + " is " + cost);
+
+            if ("grayscott".equals(workloadType)) {
+                String stopOnExtinction = parseRawQuery(exchange).getOrDefault("stopOnExtinction", "true");
+                if ("false".equalsIgnoreCase(stopOnExtinction)) {
+                    cost = cost * 25;
+                    System.out.println("[LB] stopOnExtinction=false : applying x10 cost multiplier: cost=" + cost);
+                }
+            }
         }
 
         Supervisor supervisor = Supervisor.getInstance();
