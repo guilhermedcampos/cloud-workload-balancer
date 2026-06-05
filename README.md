@@ -42,7 +42,7 @@ Each worker exposes:
 - `/fractals`
 - `/dna`
 - `/grayscott`
-- `/test`
+- `/health`
 
 ---
 
