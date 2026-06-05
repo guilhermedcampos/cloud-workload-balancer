@@ -149,7 +149,6 @@ public class Metrics {
 
         double structural =
                 1.0
-                // + 0.05 * methods
                 + 0.05 * constructors;
 
         double fragPenalty =
