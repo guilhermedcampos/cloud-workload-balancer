@@ -41,6 +41,8 @@ public class LoadBalancingHandler implements HttpHandler {
     private static final double HIGH_LOAD_CPU_THRESHOLD = 0.8;
     private static final int LAMBDA_MAX_COST = 50_000;
     private static final int EC2_PREFER_THRESHOLD = 20_000; // send lambda if cost is below this threshold and only high-load workers are available
+    private static final int MAX_WORKER_WAIT_RETRIES = 5;
+    private static final long WORKER_WAIT_SLEEP_MS = 5_000;
 
     private final AWSLambda lambdaClient;
 
@@ -242,6 +244,20 @@ public class LoadBalancingHandler implements HttpHandler {
                 invokeLambda(exchange, cost);
                 return;
             }
+            // wait for a worker slot to open (in-flight requests completing or new VM starting)
+            for (int attempt = 1; attempt <= MAX_WORKER_WAIT_RETRIES && worker == null; attempt++) {
+                System.out.println("[LB] No worker available for cost=" + cost + ", waiting... (attempt " + attempt + "/" + MAX_WORKER_WAIT_RETRIES + ")");
+                try {
+                    Thread.sleep(WORKER_WAIT_SLEEP_MS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                worker = supervisor.getOptimalWorker(cost);
+            }
+        }
+
+        if (worker == null) {
             String msg = "503 No workers available";
             exchange.sendResponseHeaders(503, msg.length());
             try (OutputStream os = exchange.getResponseBody()) {
