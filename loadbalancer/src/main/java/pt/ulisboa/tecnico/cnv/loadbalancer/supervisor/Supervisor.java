@@ -267,10 +267,10 @@ public class Supervisor {
                     if (handler != null) {
                         handler.accept(exchange, p.getRight());
                     } else {
-                        System.err.println("[Supervisor] No rehandle handler registered for workload: " + workloadType);
+                        System.out.println("[Supervisor] No rehandle handler registered for workload: " + workloadType);
                     }
                 } catch (Exception e) {
-                    System.err.println("[Supervisor] Failed to rehandle exchange: " + e.getMessage());
+                    System.out.println("[Supervisor] Failed to rehandle exchange: " + e.getMessage());
                 }
             }
         }

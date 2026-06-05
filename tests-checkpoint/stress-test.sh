@@ -49,12 +49,14 @@ echo "  ssh -i \$AWS_EC2_SSH_KEYPAR_PATH ec2-user@\$(cat scripts/lb/lbinstance.d
 echo ""
 
 fire_wave() {
-    curl -s --max-time 600 "http://$HOST/fractals?w=2000&h=2000&iterations=20000" -o /dev/null &
-    curl -s --max-time 600 "http://$HOST/fractals?w=2500&h=2000&iterations=15000" -o /dev/null &
+    curl -s "http://$HOST/fractals?w=2000&h=2000&iterations=200" -o /dev/null &
+    curl -s "http://$HOST/fractals?w=2500&h=2000&iterations=150" -o /dev/null &
+    curl -s "http://$HOST/fractals?w=2000&h=2000&iterations=200" -o /dev/null &
+    curl -s "http://$HOST/fractals?w=2500&h=2000&iterations=150" -o /dev/null &
 
     # GrayScott — small grid (~3 MB/request) but high iterations for CPU burn
-    curl -s --max-time 600 "http://$HOST/grayscott?size=300&maxIterations=200000&f=0.055&k=0.062&seedMode=center" -o /dev/null &
-    curl -s --max-time 600 "http://$HOST/grayscott?size=300&maxIterations=200000&f=0.055&k=0.062&seedMode=center" -o /dev/null &
+    curl -s "http://$HOST/grayscott?size=300&maxIterations=200&f=0.055&k=0.062&seedMode=center" -o /dev/null &
+    curl -s "http://$HOST/grayscott?size=300&maxIterations=200&f=0.055&k=0.062&seedMode=center" -o /dev/null &    
 }
 
 END_TIME=$(( $(date +%s) + DURATION ))

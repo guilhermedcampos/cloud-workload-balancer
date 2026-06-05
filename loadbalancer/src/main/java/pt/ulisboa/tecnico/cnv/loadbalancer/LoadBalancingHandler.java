@@ -62,7 +62,7 @@ public class LoadBalancingHandler implements HttpHandler {
                     // Try to rehandle the exchange by running through this handler again
                     this.handle(exchange);
                 } catch (IOException e) {
-                    System.err.println("Rehandle error: " + e.getMessage());
+                    System.out.println("Rehandle error: " + e.getMessage());
                 }
             }).start();
         });

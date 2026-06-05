@@ -93,7 +93,7 @@ public class Metrics {
                 && DNA_TABLE == null
                 && GRAYSCOTT_TABLE == null) {
 
-            System.err.println("[Metrics] No DynamoDB tables configured, DynamoDB disabled");
+            System.out.println("[Metrics] No DynamoDB tables configured, DynamoDB disabled");
             return null;
         }
         try {
@@ -101,7 +101,7 @@ public class Metrics {
                     .withCredentials(new EnvironmentVariableCredentialsProvider())
                     .build();
         } catch (Exception e) {
-            System.err.println("[Metrics] DynamoDB init failed: " + e.getMessage());
+            System.out.println("[Metrics] DynamoDB init failed: " + e.getMessage());
             return null;
         }
     }
@@ -187,8 +187,12 @@ public class Metrics {
         String[] parts = outputLine.split(",", 8);
 
         String workload = parts.length > 1 ? parts[1] : "";
+        S
         String table = getTableForWorkload(workload);
-
+        System.out.println("[Metrics@logMetric] workload=" + workload 
+            + " table=" + table 
+            + " DYNAMO=" + (DYNAMO != null ? "ok" : "null")
+            + " bufferSize=" + BUFFER.size());
         if (table != null && DYNAMO != null) {
 
             Map<String, AttributeValue> item = new HashMap<>();
@@ -214,11 +218,14 @@ public class Metrics {
             }
             item.put("tsEpochMs", new AttributeValue().withN(Long.toString(System.currentTimeMillis())));
 
+            System.out.println("[Metrics@logMetric] Prepared item for DynamoDB: " + item);
 
             boolean queued = BUFFER.offer(item);
             if (!queued) {
-                System.err.println("[Metrics] Warning: Buffer full, dropping metric: " + outputLine);
+                System.out.println("[Metrics@logMetric] Warning: Buffer full, dropping metric: " + outputLine);
             }
+        } else {
+            System.out.println("[Metrics@logMetric] DynamoDB not configured, skipping metric: " + outputLine);
         }
     }
 
@@ -229,7 +236,7 @@ public class Metrics {
         BUFFER.drainTo(drained, 25);
         if (drained.isEmpty()) return;
 
-        System.out.println("[Metrics] Flushing " + drained.size() + " metrics to DynamoDB...");
+        System.out.println("[Metrics@flushToDynamo] Flushing " + drained.size() + " metrics to DynamoDB...");
 
         Map<String, List<WriteRequest>> grouped = new HashMap<>();
 
@@ -241,7 +248,7 @@ public class Metrics {
             String table = getTableForWorkload(workload);
             if (table == null) continue;
 
-            System.err.println("[Metrics DEBUG] workload=" + workload 
+            System.out.println("[Metrics@flushToDynamo] workload=" + workload 
                 + " table=" + table 
                 + " DYNAMO=" + (DYNAMO != null ? "ok" : "null")
                 + " bufferSize=" + BUFFER.size());
@@ -276,7 +283,7 @@ public class Metrics {
                     Thread.sleep(100L * (1 << attempts));
 
                 } catch (Exception e) {
-                    System.err.println("[Metrics] batchWrite failed: " + e.getMessage());
+                    System.out.println("[Metrics@flushToDynamo] batchWrite failed: " + e.getMessage());
                     break;
                 }
             }

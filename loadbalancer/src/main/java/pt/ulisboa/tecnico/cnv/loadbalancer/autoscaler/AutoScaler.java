@@ -67,7 +67,7 @@ public class AutoScaler {
             try {
                 terminateInstance(worker.getInstance());
             } catch (Exception e) {
-                System.err.println("[AutoScaler] Failed to terminate dead worker " + worker.getId() + ": " + e.getMessage());
+                System.out.println("[AutoScaler] Failed to terminate dead worker " + worker.getId() + ": " + e.getMessage());
             }
         });
     }
@@ -87,7 +87,7 @@ public class AutoScaler {
                     handleScaleDown();
                     handleTerminateInstances();
                 } catch (Exception e) {
-                    System.err.println("[AutoScaler] Error in scaling loop: " + e.getMessage());
+                    System.out.println("[AutoScaler] Error in scaling loop: " + e.getMessage());
                     e.printStackTrace();
                 }
             }

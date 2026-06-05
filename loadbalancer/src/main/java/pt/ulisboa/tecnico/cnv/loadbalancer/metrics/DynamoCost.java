@@ -93,7 +93,7 @@ public class DynamoCost {
 
             return median(complexities);
         } catch (Exception e) {
-            System.err.println("[DynamoCost] query failed for key " + bucketKey + ": " + e.getMessage());
+            System.out.println("[DynamoCost] query failed for key " + bucketKey + ": " + e.getMessage());
             return null;
         }
     }
