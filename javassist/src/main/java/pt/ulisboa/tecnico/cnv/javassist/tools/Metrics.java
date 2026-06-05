@@ -187,7 +187,6 @@ public class Metrics {
         String[] parts = outputLine.split(",", 8);
 
         String workload = parts.length > 1 ? parts[1] : "";
-        S
         String table = getTableForWorkload(workload);
         System.out.println("[Metrics@logMetric] workload=" + workload 
             + " table=" + table 
