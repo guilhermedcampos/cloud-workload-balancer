@@ -2,6 +2,7 @@
 
 source "$(dirname "$(realpath "$0")")/../config.sh"
 
+DIR="$(dirname "$(realpath "$0")")"
 # Ensure port 8080 is open for the LB (idempotent — silently ignores duplicate rules).
 echo "Ensuring port 8080 is open on security group $AWS_SECURITY_GROUP..."
 aws ec2 authorize-security-group-ingress \
@@ -15,24 +16,24 @@ aws ec2 run-instances \
     --instance-type t3.micro \
     --key-name "$AWS_KEYPAIR_NAME" \
     --security-group-ids "$AWS_SECURITY_GROUP" \
-    --monitoring Enabled=true | jq -r ".Instances[0].InstanceId" > lbinstance.id
+    --monitoring Enabled=true | jq -r ".Instances[0].InstanceId" > "$DIR/lbinstance.id"
 
-echo "New LB instance with id $(cat lbinstance.id)."
+echo "New LB instance with id $(cat "$DIR/lbinstance.id")."
 
 aws ec2 create-tags \
-    --resources "$(cat lbinstance.id)" \
+    --resources "$(cat "$DIR/lbinstance.id")" \
     --tags Key=type,Value=load-balancer
 
-aws ec2 wait instance-running --instance-ids $(cat lbinstance.id)
-echo "New LB instance with id $(cat lbinstance.id) is now running."
+aws ec2 wait instance-running --instance-ids $(cat "$DIR/lbinstance.id")
+echo "New LB instance with id $(cat "$DIR/lbinstance.id") is now running."
 
 aws ec2 describe-instances \
-    --instance-ids $(cat lbinstance.id) | jq -r ".Reservations[0].Instances[0].NetworkInterfaces[0].PrivateIpAddresses[0].Association.PublicDnsName" > lbinstance.dns
+    --instance-ids $(cat "$DIR/lbinstance.id") | jq -r ".Reservations[0].Instances[0].PublicDnsName" > "$DIR/lbinstance.dns"
 
-echo "New LB instance with id $(cat lbinstance.id) has address $(cat lbinstance.dns)."
+echo "New LB instance with id $(cat "$DIR/lbinstance.id") has address $(cat "$DIR/lbinstance.dns")."
 
-while ! nc -z $(cat lbinstance.dns) 22; do
-    echo "Waiting for $(cat lbinstance.dns):22 (SSH)..."
+while ! nc -z $(cat "$DIR/lbinstance.dns") 22; do
+    echo "Waiting for $(cat "$DIR/lbinstance.dns"):22 (SSH)..."
     sleep 0.5
 done
 

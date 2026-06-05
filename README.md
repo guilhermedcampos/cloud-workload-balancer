@@ -113,7 +113,7 @@ mvn clean package
 
 # 3. Create security group
 cd scripts
-bash ami/create_sec_group.sh
+bash ami/create-sec-group.sh
 # Copy SECURITY GROUP ID into config.sh
 
 # 4. Build worker AMI

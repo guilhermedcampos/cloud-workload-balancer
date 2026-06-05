@@ -12,11 +12,30 @@ source "$SCRIPT_DIR/../scripts/config.sh"
 if [ -n "${CNV_HOST:-}" ]; then
     HOST="$CNV_HOST"
 else
-    LB_DNS=$(cat "$SCRIPT_DIR/../scripts/lb/lbinstance.dns" 2>/dev/null)
-    if [ -z "$LB_DNS" ]; then
-        echo "ERROR: Could not find LB instance DNS. Run scripts/lb/launch-lb-vm.sh first."
+    LB_FILE="$SCRIPT_DIR/../scripts/lb/lbinstance.dns"
+
+    if [ ! -f "$LB_FILE" ]; then
+        echo "ERROR: Could not find LB instance DNS."
+        echo "Expected file: $LB_FILE"
+        echo "Run scripts/lb/launch-lb-vm.sh first."
         exit 1
     fi
+
+    LB_DNS=$(tr -d '\n\r' < "$LB_FILE")
+
+    if [ -z "$LB_DNS" ]; then
+        echo "ERROR: LB DNS file exists but is empty:"
+        echo "  $LB_FILE"
+        exit 1
+    fi
+
+    if ! host "$LB_DNS" >/dev/null 2>&1; then
+        echo "ERROR: LB DNS does not resolve:"
+        echo "  $LB_DNS"
+        echo "The file may be stale. Relaunch the load balancer VM."
+        exit 1
+    fi
+
     HOST="${LB_DNS}:8080"
     echo "Auto-detected LB host: $HOST"
 fi

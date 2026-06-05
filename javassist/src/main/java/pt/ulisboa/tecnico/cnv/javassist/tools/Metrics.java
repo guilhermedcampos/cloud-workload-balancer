@@ -114,7 +114,7 @@ public class Metrics {
                     20,
                     TimeUnit.SECONDS
             );
-
+            System.out.println("[Metrics] DynamoDB integration enabled, flushing every 20 seconds");
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 FLUSHER.shutdown();
                 try {
@@ -229,6 +229,8 @@ public class Metrics {
         BUFFER.drainTo(drained, 25);
         if (drained.isEmpty()) return;
 
+        System.out.println("[Metrics] Flushing " + drained.size() + " metrics to DynamoDB...");
+
         Map<String, List<WriteRequest>> grouped = new HashMap<>();
 
         for (Map<String, AttributeValue> item : drained) {
@@ -238,6 +240,11 @@ public class Metrics {
             String workload = workloadAttr.getS();
             String table = getTableForWorkload(workload);
             if (table == null) continue;
+
+            System.err.println("[Metrics DEBUG] workload=" + workload 
+                + " table=" + table 
+                + " DYNAMO=" + (DYNAMO != null ? "ok" : "null")
+                + " bufferSize=" + BUFFER.size());
 
             grouped.computeIfAbsent(table, k -> new ArrayList<>())
                 .add(new WriteRequest(new PutRequest().withItem(item)));
