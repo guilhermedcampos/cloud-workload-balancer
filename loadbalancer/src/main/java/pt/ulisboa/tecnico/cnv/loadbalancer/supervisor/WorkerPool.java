@@ -104,7 +104,7 @@ public class WorkerPool {
                     double cpu = worker.getCpuUsage();
                     return cpu >= minCpuInclusive && cpu < maxCpuExclusive;
                 })
-                .filter(worker -> worker.getLoad() + cost < MAX_LOAD_THRESHOLD)
+                .filter(worker -> worker.getLoad() + cost <= MAX_LOAD_THRESHOLD)
                 .findFirst()
                 .orElse(null);
     }

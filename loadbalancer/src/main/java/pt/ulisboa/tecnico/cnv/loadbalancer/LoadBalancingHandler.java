@@ -57,6 +57,7 @@ public class LoadBalancingHandler implements HttpHandler {
         this.costEstimator = new CostEstimator(params, costs);
         this.lambdaClient = AWSLambdaClient.builder()
             .withCredentials(new EnvironmentVariableCredentialsProvider())
+            .withRegion(System.getenv().getOrDefault("AWS_DEFAULT_REGION", "us-east-1"))
             .build();
 
         // Register this handler instance for its workload so re-dispatch uses the correct configuration.
@@ -362,7 +363,9 @@ public class LoadBalancingHandler implements HttpHandler {
                 .withFunctionName(System.getenv("LAMBDA_FUNCTION_NAME"))
                 .withPayload(payload);
 
+        System.out.println("[LB] Invoking Lambda function=" + System.getenv("LAMBDA_FUNCTION_NAME") + " region=" + System.getenv("AWS_DEFAULT_REGION"));
         InvokeResult response = lambdaClient.invoke(request);
+        System.out.println("[LB] Lambda response statusCode=" + response.getStatusCode() + " functionError=" + response.getFunctionError());
 
         String resultString = new String(response.getPayload().array(), java.nio.charset.StandardCharsets.UTF_8);
 

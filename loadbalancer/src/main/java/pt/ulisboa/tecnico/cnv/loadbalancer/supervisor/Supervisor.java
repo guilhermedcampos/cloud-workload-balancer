@@ -215,6 +215,23 @@ public class Supervisor {
 
     public void removeInactiveWorker(Worker worker) {
         WorkerPool pool = this.workers.remove(worker);
+        if (worker.getLoad() > 0) {
+            List<Pair<HttpExchange, Integer>> pending = worker.drainPendingExchanges();
+            for (Pair<HttpExchange, Integer> p : pending) {
+                try {
+                    HttpExchange exchange = p.getLeft();
+                    String workloadType = extractWorkloadType(exchange);
+                    BiConsumer<HttpExchange, Integer> handler = rehandleExchangeHandlers.get(workloadType);
+                    if (handler != null) {
+                        handler.accept(exchange, p.getRight());
+                    } else {
+                        System.out.println("[Supervisor] No rehandle handler registered for workload: " + workloadType);
+                    }
+                } catch (Exception e) {
+                    System.out.println("[Supervisor] Failed to rehandle exchange: " + e.getMessage());
+                }
+            }
+        }
         if (pool != null) {
             System.out.println(String.format("[Supervisor] Removing worker %s from pool %s", worker.getIp(), pool.getType().name()));
             pool.removeWorker(worker);
